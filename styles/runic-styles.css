@@ -1,0 +1,654 @@
+.runic-panel {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.runic-panel-readonly .runic-preset-btns {
+  display: none;
+}
+
+.runic-panel-readonly .rune-slot {
+  pointer-events: none;
+  cursor: default;
+  opacity: 0.6;
+}
+.runic-panel-readonly .rune-slot.slot-filled {
+  opacity: 0.75; 
+}
+.runic-panel-readonly .runic-rarity-badge {
+  opacity: 0.6;
+}
+
+.runic-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 6px;
+}
+
+.runic-preset-btns {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.runic-preset-btn {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 3px;
+  color: rgba(255,255,255,0.45);
+  cursor: pointer;
+  font-size: 0.75em;
+  padding: 2px 7px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.runic-preset-btn:hover {
+  color: rgba(255,255,255,0.85);
+  border-color: rgba(255,255,255,0.35);
+}
+.runic-preset-btn.preset-saved {
+  color: #f1c40f;
+  border-color: #f1c40f88;
+  box-shadow: 0 0 6px #f1c40f66;
+  transition: none;
+}
+
+.runic-preset-picker {
+  display: none;
+  background: rgba(6,5,14,0.97);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 5px;
+  padding: 6px;
+  margin-bottom: 2px;
+  max-height: 240px;
+  overflow-y: auto;
+  animation: picker-slide-in 0.15s ease-out;
+}
+
+.runic-preset-picker-empty {
+  color: rgba(255,255,255,0.3);
+  font-size: 0.78em;
+  text-align: center;
+  padding: 14px 0;
+  font-style: italic;
+}
+
+.preset-entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.preset-entry:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.preset-mini-sockets {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.preset-mini-sock {
+  width: 22px;
+  height: 26px;
+  clip-path: polygon(50% 0%, 100% 22%, 100% 78%, 50% 100%, 0% 78%, 0% 22%);
+  background: rgba(255,255,255,0.07);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.preset-mini-sock.mini-filled {
+  background: color-mix(in srgb, var(--rune-color, #888) 18%, transparent);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.6), 0 0 4px var(--rune-color, transparent);
+}
+
+.preset-entry-name {
+  flex: 1;
+  font-size: 0.8em;
+  color: rgba(255,255,255,0.78);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preset-entry-rarity {
+  font-size: 0.62em;
+  padding: 1px 5px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  font-weight: bold;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.preset-entry-rarity[data-rarity="Common"] { color: #888; }
+.preset-entry-rarity[data-rarity="Uncommon"] { color: #27ae60; }
+.preset-entry-rarity[data-rarity="Rare"] { color: #2980b9; }
+.preset-entry-rarity[data-rarity="Very Rare"] { color: #8e44ad; }
+.preset-entry-rarity[data-rarity="Legendary"] { color: #e67e22; }
+
+.rune-slot-combo {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: default;
+  position: relative;
+}
+.rune-slot-combo .rune-socket {
+  width: 46px;
+  height: 54px;
+  clip-path: polygon(50% 0%, 100% 22%, 100% 78%, 50% 100%, 0% 78%, 0% 22%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: color-mix(in srgb, var(--rune-color, #888) 14%, rgba(255,255,255,0.04));
+  box-shadow: inset 0 2px 5px rgba(0,0,0,0.55), inset 0 -1px 1px rgba(255,255,255,0.06);
+  animation: combo-socket-breathe 2.8s ease-in-out infinite;
+}
+@keyframes combo-socket-breathe {
+  0%, 100% { filter: drop-shadow(0 0 5px var(--rune-color)) drop-shadow(0 0 2px var(--rune-color)); }
+  50% { filter: drop-shadow(0 0 14px var(--rune-color)) drop-shadow(0 0 6px var(--rune-color)); }
+}
+.rune-slot-combo .rune-slot-label {
+  color: var(--rune-color, rgba(255,255,255,0.38));
+  opacity: 0.7;
+}
+
+@keyframes combo-forge {
+  0% { opacity: 0; transform: scale(0.05); filter: brightness(0) saturate(0); }
+  10% { opacity: 1; transform: scale(0.35); filter: brightness(12) saturate(0); }
+  28% { opacity: 1; transform: scale(1.22); filter: brightness(5) saturate(0.2); }
+  48% { opacity: 1; transform: scale(0.94); filter: brightness(2.5) saturate(0.7); }
+  68% { opacity: 1; transform: scale(1.05); filter: brightness(1.4) saturate(1); }
+  85% { opacity: 1; transform: scale(0.98); filter: brightness(1.1) saturate(1); }
+  100% { opacity: 1; transform: scale(1); filter: brightness(1) saturate(1); }
+}
+@keyframes combo-dissolve {
+  0% { opacity: 1; transform: scale(1); filter: blur(0) brightness(1); }
+  30% { opacity: 1; transform: scale(1.08); filter: blur(0) brightness(2.5); }
+  100% { opacity: 0; transform: scale(0.1); filter: blur(10px) brightness(0); }
+}
+
+.runic-preset-manager-content {
+  max-height: 420px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.preset-manager-category h4 {
+  margin: 10px 0 0;
+  font-size: 1em;
+  font-weight: bold;
+  letter-spacing: 0.03em;
+  color: rgba(0,0,0,0.75);
+  background: rgba(180,140,30,0.14);
+  border-left: 3px solid rgba(160,120,20,0.55);
+  padding: 6px 10px;
+  border-radius: 2px 2px 0 0;
+}
+.preset-manager-category:first-child h4 {
+  margin-top: 0;
+}
+.preset-manager-empty {
+  font-size: 0.82em;
+  color: rgba(0,0,0,0.35);
+  font-style: italic;
+  margin: 3px 0 8px 2px;
+}
+.preset-manager-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 3px;
+  margin-bottom: 2px;
+}
+.preset-manager-name {
+  font-size: 0.9em;
+  color: rgba(0,0,0,0.82);
+  word-break: break-word;
+  width: 100%;
+}
+
+/* Melee: crimson */
+.preset-cat-melee h4 {
+  background: rgba(160,35,35,0.16);
+  border-left-color: rgba(140,25,25,0.55);
+  color: rgba(100,12,12,0.92);
+}
+.preset-cat-melee .row-shade-a { background: rgba(160,35,35,0.05); }
+.preset-cat-melee .row-shade-b { background: rgba(160,35,35,0.11); }
+
+/* Ranged: forest green */
+.preset-cat-ranged h4 {
+  background: rgba(28,110,55,0.16);
+  border-left-color: rgba(20,90,40,0.55);
+  color: rgba(10,65,25,0.92);
+}
+.preset-cat-ranged .row-shade-a { background: rgba(28,110,55,0.05); }
+.preset-cat-ranged .row-shade-b { background: rgba(28,110,55,0.11); }
+
+/* Armor: steel blue */
+.preset-cat-armor h4 {
+  background: rgba(30,80,160,0.16);
+  border-left-color: rgba(20,60,140,0.55);
+  color: rgba(10,42,105,0.92);
+}
+.preset-cat-armor .row-shade-a { background: rgba(30,80,160,0.05); }
+.preset-cat-armor .row-shade-b { background: rgba(30,80,160,0.11); }
+.preset-manager-delete {
+  width: auto !important;
+  max-width: 110px !important;
+  align-self: flex-end;
+  font-size: 0.75em !important;
+  padding: 2px 10px !important;
+  line-height: 1.4 !important;
+  background: rgba(0,0,0,0.05) !important;
+  border: 1px solid rgba(0,0,0,0.18) !important;
+  color: rgba(120,30,30,0.85) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+.preset-manager-delete:hover {
+  background: rgba(160,30,30,0.08) !important;
+  border-color: rgba(160,30,30,0.4) !important;
+  color: rgba(140,20,20,1) !important;
+}
+
+.runic-panel-title {
+  font-size: 0.95em;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255,255,255,0.75);
+  padding-left: 8px;
+}
+
+.runic-rarity-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 10px;
+  font-size: 0.72em;
+  font-weight: bold;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  align-self: flex-start;
+  border: 1px solid currentColor;
+}
+.runic-rarity-badge[data-rarity="Common"] { color: #888; border-color: #888; }
+.runic-rarity-badge[data-rarity="Uncommon"] { color: #27ae60; border-color: #27ae60; }
+.runic-rarity-badge[data-rarity="Rare"] { color: #2980b9; border-color: #2980b9; }
+.runic-rarity-badge[data-rarity="Very Rare"] { color: #8e44ad; border-color: #8e44ad; }
+.runic-rarity-badge[data-rarity="Legendary"] { color: #e67e22; border-color: #e67e22; }
+
+.runic-section {
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  padding: 6px 10px 10px;
+  background: transparent;
+  position: relative;
+}
+
+.runic-crack-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 0;
+}
+.crack-path {
+  stroke-dasharray: 250;
+  stroke-dashoffset: 250;
+  animation: crack-draw 0.9s ease-out 0.05s forwards;
+}
+@keyframes crack-draw {
+  to { stroke-dashoffset: 0; }
+}
+
+.runic-crack-message {
+  align-self: center;
+  flex-shrink: 0;
+  max-width: 160px;
+  margin-left: 10px;
+  background: rgba(4,3,12,0.92);
+  border: 1px solid;
+  border-radius: 3px;
+  padding: 3px 8px;
+  font-size: 0.67em;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  animation: crack-msg-appear 0.3s ease-out 0.75s forwards;
+}
+@keyframes crack-msg-appear {
+  to { opacity: 1; }
+}
+.runic-section legend {
+  padding: 0 6px;
+  font-size: 0.75em;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,0.5);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.runic-hint {
+  font-size: 0.8em;
+  letter-spacing: 0;
+  text-transform: none;
+  opacity: 0.5;
+}
+
+.rune-slot-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  margin-top: 8px;
+  position: relative;
+}
+
+/* Base slot */
+.rune-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.65)) drop-shadow(0 0 1px rgba(255,255,255,0.18));
+  transition: filter 0.3s ease;
+}
+.rune-slot:hover {
+  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.9)) drop-shadow(0 0 1.5px rgba(255,255,255,0.28)) brightness(1.2);
+}
+.rune-slot.slot-filled {
+  animation: slot-glow-pulse 3s ease-in-out infinite;
+}
+@keyframes slot-glow-pulse {
+  0%, 100% { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.65)) drop-shadow(0 0 6px var(--rune-color)) drop-shadow(0 0 2px var(--rune-color)); }
+  50% { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.65)) drop-shadow(0 0 20px var(--rune-color)) drop-shadow(0 0 8px var(--rune-color)); }
+}
+
+/* Base socket cavity */
+.rune-socket {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: rgba(255,255,255,0.07);
+  box-shadow:
+    inset 0 2px 5px rgba(0,0,0,0.55),
+    inset 0 -1px 1px rgba(255,255,255,0.06);
+}
+.rune-socket.sock-filled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--rune-color, transparent);
+  opacity: 0.15;
+  pointer-events: none;
+  animation: sock-inner-breathe 3s ease-in-out infinite;
+}
+@keyframes sock-inner-breathe {
+  0%, 100% { opacity: 0.1; }
+  50% { opacity: 0.28; }
+}
+
+/* Runic Power */
+.rune-slot-power .rune-socket {
+  width: 46px;
+  height: 54px;
+  clip-path: polygon(50% 0%, 100% 22%, 100% 78%, 50% 100%, 0% 78%, 0% 22%);
+}
+
+/* Runic Empowerment */
+.rune-slot-emp .rune-socket {
+  width: 34px;
+  height: 46px;
+  clip-path: polygon(50% 0%, 100% 26%, 100% 74%, 50% 100%, 0% 74%, 0% 26%);
+}
+
+/* Runic Legacy */
+.rune-slot-legacy .rune-socket {
+  width: 48px;
+  height: 48px;
+  clip-path: polygon(29% 0%, 71% 0%, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0% 71%, 0% 29%);
+}
+
+/* Inscription Flash */
+.rune-socket.sock-flashing {
+  animation: sock-flash 0.4s ease-out forwards;
+}
+@keyframes sock-flash {
+  0%   { filter: brightness(4) saturate(0.2); }
+  100% { filter: brightness(1) saturate(1); }
+}
+
+.rune-glyph {
+  filter: drop-shadow(0 0 2px rgba(0,0,0,1)) drop-shadow(0 0 1px rgba(0,0,0,0.9));
+}
+
+.rune-slot-label {
+  font-size: 0.64em;
+  color: rgba(255,255,255,0.38);
+  letter-spacing: 0.05em;
+}
+
+/* Tooltip */
+#runic-global-tip {
+  position: fixed;
+  z-index: 99999;
+  width: 220px;
+  background: rgba(6,6,18,0.97);
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 6px;
+  padding: 9px 11px;
+  pointer-events: none;
+  display: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.45;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.7);
+}
+#runic-global-tip strong {
+  display: block;
+  font-size: 0.83em;
+  margin-bottom: 5px;
+  color: rgba(255,255,255,0.96);
+}
+#runic-global-tip p {
+  font-size: 0.75em;
+  color: rgba(255,255,255,0.72);
+  margin: 0;
+}
+
+/* Legacy item icon inside a socket */
+.legacy-item-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 2px;
+  opacity: 0.88;
+  pointer-events: none;
+}
+
+/* Legacy search picker */
+.legacy-search-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 7px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.legacy-search-input-wrap {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(0,0,0,0.45);
+  border: 1px solid rgba(255,255,255,0.13);
+  border-radius: 4px;
+  padding: 4px 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.legacy-search-input-wrap:focus-within {
+  border-color: rgba(180,140,255,0.5);
+  box-shadow: 0 0 6px rgba(160,100,255,0.2);
+}
+
+.legacy-search-icon {
+  flex: 0 0 auto;
+  color: rgba(255,255,255,0.35);
+}
+
+.legacy-search-input {
+  flex: 1 1 0%;
+  min-width: 0;
+  width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: rgba(255,255,255,0.88);
+  font-size: 0.78em;
+  letter-spacing: 0.04em;
+}
+.legacy-search-input::placeholder {
+  color: rgba(255,255,255,0.28);
+  font-style: italic;
+}
+
+.legacy-remove-btn,
+.legacy-remove-btn:not([data-anything]) {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.11);
+  border-radius: 4px;
+  color: rgba(255,255,255,0.4);
+  font-size: 0.7em;
+  letter-spacing: 0.06em;
+  padding: 4px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s, border-color 0.18s, color 0.18s;
+}
+.legacy-remove-btn:hover {
+  background: rgba(220,70,70,0.18);
+  border-color: rgba(220,70,70,0.35);
+  color: rgba(255,190,190,0.95);
+}
+
+.legacy-search-hint {
+  font-size: 0.7em;
+  color: rgba(255,255,255,0.24);
+  font-style: italic;
+  text-align: center;
+  padding: 2px 0 6px;
+  letter-spacing: 0.04em;
+}
+
+/* Settings panel cache buttons */
+.runic-cache-buttons {
+  display: flex;
+  gap: 8px;
+  flex: 2;
+}
+.runic-cache-buttons button {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+
+/* Picker panel */
+.rune-picker-panel {
+  display: none;
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0,0,0,0.55);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  overflow: hidden;
+  animation: picker-slide-in 0.15s ease-out;
+}
+@keyframes picker-slide-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rune-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+/* Picker option */
+.rune-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  position: relative;
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6));
+  transition: filter 0.2s;
+}
+.rune-option:hover {
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)) brightness(1.35);
+}
+.rune-option.opt-selected {
+  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.6)) drop-shadow(0 0 6px var(--rune-color, #888));
+}
+
+.rune-option-socket {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255,255,255,0.07);
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.9);
+}
+.opt-sock-power { width: 34px; height: 40px; clip-path: polygon(50% 0%, 100% 22%, 100% 78%, 50% 100%, 0% 78%, 0% 22%); }
+.opt-sock-emp { width: 26px; height: 34px; clip-path: polygon(50% 0%, 100% 26%, 100% 74%, 50% 100%, 0% 74%, 0% 26%); }
+.opt-sock-legacy { width: 34px; height: 34px; clip-path: polygon(29% 0%, 71% 0%, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0% 71%, 0% 29%); }
+.opt-sock-remove { width: 34px; height: 34px; clip-path: polygon(29% 0%, 71% 0%, 100% 29%, 100% 71%, 71% 100%, 29% 100%, 0% 71%, 0% 29%); opacity: 0.35; }
+
+.rune-option-name {
+  font-size: 0.64em;
+  color: rgba(255,255,255,0.6);
+  text-align: center;
+  max-width: 58px;
+  line-height: 1.2;
+}
+.rune-option:hover .rune-option-name { color: rgba(255,255,255,0.9); }
+.rune-option.opt-selected .rune-option-name { color: #fff; }
+

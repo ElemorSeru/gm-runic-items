@@ -1,0 +1,48 @@
+<div class="runic-panel">
+
+  <div class="runic-panel-header">
+    <span class="runic-panel-title">{{localize "gm-runic-items.panel.title"}}</span>
+    <div class="runic-rarity-badge" data-rarity="{{runicRarity}}">{{runicRarity}}</div>
+  </div>
+
+  <fieldset class="runic-section runic-power">
+    <legend>{{localize "gm-runic-items.panel.power"}}</legend>
+    <div class="rune-slot-row">
+      {{#each powerSlots}}
+      <div class="rune-slot rune-slot-power" data-section="power" data-index="{{this.index}}" data-rune-id="{{this.runeId}}">
+        <div class="rune-socket"></div>
+      </div>
+      {{/each}}
+    </div>
+    <div class="rune-picker-panel" data-section="power"></div>
+  </fieldset>
+
+  <fieldset class="runic-section runic-empowerment">
+    <legend>{{localize "gm-runic-items.panel.empowerment"}}</legend>
+    <div class="rune-slot-row">
+      {{#each empowermentSlots}}
+      <div class="rune-slot rune-slot-emp" data-section="empowerment" data-index="{{this.index}}" data-rune-id="{{this.stat}}">
+        <div class="rune-socket"></div>
+      </div>
+      {{/each}}
+    </div>
+    <div class="rune-picker-panel" data-section="empowerment"></div>
+  </fieldset>
+
+  <fieldset class="runic-section runic-legacy">
+    <legend>{{localize "gm-runic-items.panel.legacy"}}</legend>
+    <div class="rune-slot-row">
+      <div class="rune-slot rune-slot-legacy" data-section="legacy-feat" data-index="0" data-rune-id="{{legacyFeat.id}}">
+        <div class="rune-socket"></div>
+        <span class="rune-slot-label">{{localize "gm-runic-items.panel.feat"}}</span>
+      </div>
+      <div class="rune-slot rune-slot-legacy" data-section="legacy-spell" data-index="0" data-rune-id="{{legacySpell.id}}">
+        <div class="rune-socket"></div>
+        <span class="rune-slot-label">{{localize "gm-runic-items.panel.spell"}}</span>
+      </div>
+    </div>
+    <div class="rune-picker-panel" data-section="legacy-feat"></div>
+    <div class="rune-picker-panel" data-section="legacy-spell"></div>
+  </fieldset>
+
+</div>

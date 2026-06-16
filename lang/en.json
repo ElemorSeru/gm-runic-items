@@ -1,0 +1,176 @@
+{
+  "gm-runic-items": {
+    "panel": {
+      "title": "Solvarian Runecraft",
+      "power": "Runic Power",
+      "empowerment": "Runic Empowerment",
+      "empowermentHint": "each inscription adds +1 to the chosen stat",
+      "legacy": "Runic Legacy",
+      "feat": "Feat",
+      "spell": "Spell"
+    },
+    "rarity": {
+      "Common": "Common",
+      "Uncommon": "Uncommon",
+      "Rare": "Rare",
+      "VeryRare": "Very Rare",
+      "Legendary": "Legendary"
+    },
+    "picker": {
+      "remove": "Remove",
+      "searchFeats": "Search feats...",
+      "searchSpells": "Search spells...",
+      "loading": "Loading compendium data...",
+      "showingFirst": "Showing first {limit} of {total} - type to filter",
+      "countAvailable": "{total} {type} available",
+      "noMatch": "No {type} match \"{query}\"",
+      "typeFeats": "feats",
+      "typeSpells": "spells",
+      "featInscribed": "Feat inscribed into this item.",
+      "spellInscribed": "Level {level} spell inscribed into this item."
+    },
+    "notify": {
+      "legacyGranted": "Runic Legacy: \"{name}\" granted to {actor}.",
+      "legacyEquipRequired": "Runic Legacy: \"{item}\" must be equipped for the grant to take effect.",
+      "legacyAttuneRequired": "Runic Legacy: \"{item}\" must be equipped and attuned for the grant to take effect.",
+      "grantedBy": "Granted by {item}",
+      "cacheCleared": "[Runic Items] Compendium cache cleared.",
+      "cacheReady": "[Runic Items] Cache ready - {feats} feats, {spells} spells across {packs} packs."
+    },
+    "settings": {
+      "minRoleToEdit": {
+        "name": "Minimum Role to Edit Runes",
+        "hint": "The lowest user role that can open rune pickers and assign runes. Roles at or above the selected level have access. For example, selecting Trusted also grants access to Assistant GM and GM. Defaults to Game Master only."
+      },
+      "cacheInfo": {
+        "name": "Compendium Cache",
+        "hint": "Feats and spells are indexed from loaded compendiums on first use. Use the buttons below to manage the cache manually."
+      },
+      "cacheLabel": "Compendium Cache",
+      "clearCache": "Clear Cache",
+      "refreshCache": "Refresh Cache",
+      "refreshing": "Refreshing...",
+      "cacheNotes": "Feats and spells are indexed from loaded compendiums on first use each session. Clear empties the cache. Refresh clears and rebuilds from currently loaded compendiums."
+    },
+    "presets": {
+      "save": "Save Preset",
+      "load": "Load Preset",
+      "dialogTitle": "Save Rune Preset",
+      "namePlaceholder": "Preset name...",
+      "saved": "Preset \"{name}\" saved.",
+      "applied": "Preset \"{name}\" applied.",
+      "deleted": "Preset \"{name}\" deleted.",
+      "empty": "No saved presets for this item type.",
+      "settingsTitle": "Rune Presets",
+      "settingsHint": "View and delete saved rune preset configurations.",
+      "delete": "Delete",
+      "melee": "Melee",
+      "ranged": "Ranged",
+      "armor": "Armor",
+      "noneForCategory": "No {category} presets saved yet."
+    },
+    "combo": {
+      "label": "Combo"
+    },
+    "crack": {
+      "statOverCap": "{stats} over cap (30)",
+      "featMissing": "Feat no longer found in compendiums",
+      "spellMissing": "Spell no longer found in compendiums",
+      "featDuplicate": "Feat already granted by {item}",
+      "spellDuplicate": "Spell already granted by {item}"
+    },
+    "combat": {
+      "emberveil": {
+        "pushed": "{attacker} is repelled by {target}'s Emberveil for {distance} ft and cannot re-enter their space."
+      },
+      "forgeshield": {
+        "allies": "Allies within 10 ft of {target} gain +2 AC for 2 rounds from the Forgeshield."
+      },
+      "wardpulse": {
+        "blocked": "{attacker} fails the CON save and loses their bonus action.",
+        "resisted": "{attacker} resists the Wardpulse."
+      },
+      "vanguard": {
+        "dialogTitle": "Vanguard - Guardian's Rush",
+        "dialogContent": "<p>{actor}: use Guardian's Rush to protect {ally}?</p>",
+        "dialogFreeAction": "<p>{actor}: use Guardian's Rush (free action) to protect {ally}?</p>",
+        "noPosition": "{actor} could not find a valid adjacent position.",
+        "rushed": "{actor} rushes to protect {ally}. {attacker} suffers disadvantage on all attacks until end of round.",
+        "partial": "{actor} rushes toward {ally} but cannot close the distance in time. {attacker} suffers no penalty."
+      },
+      "stonewarden": {
+        "flared": "{name}'s Stonewarden rune flares, restoring {total} HP as they fall below half health.",
+        "prone": "Stonewarden pulses as {name} falls prone while wounded, restoring {total} HP."
+      },
+      "ashenmantle": {
+        "erupted": "{name}'s Ashen Mantle erupts. They gain resistance to all damage and cannot be moved or knocked prone this round."
+      },
+      "stonecleft": {
+        "pushed": "{target} is pushed {distance} ft and staggered by Stonecleft.",
+        "resisted": "{target} resists the Stonecleft.",
+        "autofail": "{target} is shattered back {distance} ft by a critical Stonecleft strike."
+      },
+      "mirageward": {
+        "active": "Mirageward flickers around {target}. They cannot make opportunity attacks until {attacker}'s next turn."
+      },
+      "emberbrand": {
+        "ignited": "{target} is branded with ember fire. Allies who hit them deal extra {die} radiant until {actor}'s next turn.",
+        "tick": "{name} takes {total} additional radiant damage from Emberbrand."
+      },
+      "sandgrasp": {
+        "seized": "Desert grasp seizes {target}. Their speed is reduced by {penalty} ft.",
+        "resisted": "{target} resists the Sandgrasp."
+      },
+      "ruinmark": {
+        "cracked": "{target}'s guard is cracked by Ruinmark. AC -2 for {rounds} rounds."
+      },
+      "forgebell": {
+        "rang": "Forgebell rings. {ally} may use their reaction to move up to {distance} ft toward the target.",
+        "moved": "Forgebell rings. {ally} automatically moves {distance} ft toward {target}, with {remaining} ft of the reaction move remaining for {ally} to use.",
+        "blocked": "Forgebell rings, but {ally} has no clear path toward {target}. The full {distance} ft reaction move remains available."
+      },
+      "burntrace": {
+        "marked": "{target} is marked by Burntrace and suffers disadvantage on attacks for 1 round."
+      },
+      "sandhold": {
+        "held": "{target}'s movement is reduced by {penalty} ft from Sandhold."
+      },
+      "ashcloud": {
+        "erupted": "Ashcloud erupts. Creatures in the cloud must save or be poisoned.",
+        "failed": "{name} fails the save and takes {total} poison damage."
+      },
+      "undertow": {
+        "pulled": "{target} is dragged {distance} ft toward the impact by Undertow."
+      },
+      "scorcheye": {
+        "stripped": "Scorcheye strips {target}'s concealment. They cannot use cover or invisibility until your next turn."
+      },
+      "wasteblight": {
+        "poisoned": "{target} is infected by Wasteblight. Nearby creatures risk spreading corruption.",
+        "spread": "{name} fails the save and takes {total} poison damage from spreading Wasteblight.",
+        "resisted": "{name} resists the Wasteblight spread."
+      }
+    },
+    "effects": {
+      "emberveilBlocked": "Repelled by Emberveil. Cannot move into {target}'s space until the end of the round.",
+      "wardpulseBlock": "Bonus action is blocked this round by Wardpulse.",
+      "forgeshield": "AC increased by 2 for 2 rounds from the Forgeshield aura.",
+      "vanguardDisadvantage": "Disadvantage on all attack rolls until the end of the round due to Guardian's Rush.",
+      "stonecleft": "Movement speed is halved until the end of the round due to Stonecleft.",
+      "mirageward": "Cannot make opportunity attacks until {attacker}'s next turn due to Mirageward.",
+      "ruinmark": "AC reduced by 2 for {rounds} round(s) due to Ruinmark.",
+      "emberbranded": "Marked by Emberbrand. The next ally to hit this creature deals an extra {die} radiant damage.",
+      "sandgrasp": "Movement speed reduced by {penalty} ft due to Sandgrasp.",
+      "burntrace": "Marked by Burntrace. Disadvantage on attack rolls for 1 round.",
+      "burntraceAnchored": "Marked by Burntrace. Disadvantage on attack rolls and ability checks for 1 round.",
+      "sandhold": "Movement speed reduced by {penalty} ft due to Sandhold.",
+      "sandholdAnchored": "Movement speed reduced to 0 due to Sandhold (Anchored).",
+      "scorcheye": "Concealment stripped by Scorcheye. Cannot benefit from cover or invisibility for 1 round.",
+      "scorcheyeBlightField": "Concealment stripped by Scorcheye while standing in the blight field. Cannot benefit from cover or invisibility.",
+      "wasteblight": "Infected by Wasteblight and poisoned. Adjacent creatures risk catching the corruption at the start of each of their turns.",
+      "ashenmantleResistance": "Resistance to all damage types this round due to Ashen Mantle.",
+      "ashenmantleImmovable": "Cannot be moved, pushed, or knocked prone this round due to Ashen Mantle.",
+      "armorAc": "AC increased by {bonus} due to Runic Ward."
+    }
+  }
+}
