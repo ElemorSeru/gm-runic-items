@@ -89,6 +89,29 @@ export function getRarityAcBonus(rarity) {
   return map[rarity] ?? 0;
 }
 
+// handlebars helpers moved to foundry.applications.handlebars in v13
+export function renderTemplateCompat(path, data) {
+  const fn = foundry.applications?.handlebars?.renderTemplate ?? globalThis.renderTemplate;
+  return fn(path, data);
+}
+
+export function loadTemplatesCompat(paths) {
+  const fn = foundry.applications?.handlebars?.loadTemplates ?? globalThis.loadTemplates;
+  return fn(paths);
+}
+
+// rollAbilitySave was replaced by rollSavingThrow in dnd5e 4.x
+export async function rollSave(actor, ability, dc, flavor) {
+  let result;
+  if (typeof actor.rollSavingThrow === "function") {
+    result = await actor.rollSavingThrow({ ability, target: dc }, {}, { data: { flavor } });
+  } else {
+    result = await actor.rollAbilitySave(ability, { flavor, targetValue: dc });
+  }
+  const roll = Array.isArray(result) ? result[0] : result;
+  return roll?.total ?? Infinity;
+}
+
 const _caches = new Map();
 
 export function getCache(key) {

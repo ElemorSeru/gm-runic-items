@@ -3,12 +3,33 @@ const SQUARE_NEIGHBOR_OFFSETS = [
   [-1, -1], [1, -1], [-1, 1], [1, 1]
 ];
 
+// canvas.grid.measureDistance was removed after v12; measurePath is the v12+ API
+export function measureDist(a, b) {
+  const A = a?.center ?? a;
+  const B = b?.center ?? b;
+  if (typeof canvas.grid.measurePath === "function") {
+    return canvas.grid.measurePath([A, B]).distance;
+  }
+  return canvas.grid.measureDistance(A, B);
+}
+
+export function angleBetween(from, to) {
+  return Math.atan2(to.y - from.y, to.x - from.x);
+}
+
+// canvas.grid.getSnappedPosition was removed after v12
+function snapTopLeft(x, y) {
+  const gs = canvas.grid.size;
+  return { x: Math.round(x / gs) * gs, y: Math.round(y / gs) * gs };
+}
+
 function cellCenter(x, y, gridSize) {
   return { x: x + gridSize / 2, y: y + gridSize / 2 };
 }
 
 function isCellBlocked(token, fromCenter, toCenter, toX, toY, gridSize) {
-  if (token.checkCollision(toCenter, { origin: fromCenter, type: "move", mode: "any" })) return true;
+  const backend = CONFIG.Canvas?.polygonBackends?.move;
+  if (backend?.testCollision?.(fromCenter, toCenter, { type: "move", mode: "any" })) return true;
   return canvas.tokens.placeables.some(t =>
     t.id !== token.id &&
     Math.abs(t.x - toX) < gridSize &&
@@ -18,7 +39,7 @@ function isCellBlocked(token, fromCenter, toCenter, toX, toY, gridSize) {
 
 export function findReachableCells(token, maxFeet) {
   const gridSize = canvas.grid.size;
-  const start = canvas.grid.getSnappedPosition(token.x, token.y);
+  const start = snapTopLeft(token.x, token.y);
   const startKey = `${start.x},${start.y}`;
 
   const best = new Map([[startKey, 0]]);
@@ -36,7 +57,7 @@ export function findReachableCells(token, maxFeet) {
       const ny = current.y + dy * gridSize;
       const nKey = `${nx},${ny}`;
       const toCenter = cellCenter(nx, ny, gridSize);
-      const cost = current.cost + canvas.grid.measureDistance(fromCenter, toCenter);
+      const cost = current.cost + measureDist(fromCenter, toCenter);
       if (cost > maxFeet) continue;
       if ((best.get(nKey) ?? Infinity) <= cost) continue;
       if (isCellBlocked(token, fromCenter, toCenter, nx, ny, gridSize)) continue;
@@ -58,7 +79,7 @@ export function findBestCellTowardTarget(reachableCells, targetCenter) {
   let bestDist = Infinity;
 
   for (const cell of reachableCells) {
-    const dist = canvas.grid.measureDistance(cellCenter(cell.x, cell.y, gridSize), targetCenter);
+    const dist = measureDist(cellCenter(cell.x, cell.y, gridSize), targetCenter);
     if (dist < bestDist) {
       bestDist = dist;
       best = cell;
@@ -74,14 +95,14 @@ export function findBestAdjacentCell(reachableCells, anchorToken, secondaryToken
   const anchorCenter = anchorToken.center;
 
   const adjacent = reachableCells.filter(cell =>
-    canvas.grid.measureDistance(cellCenter(cell.x, cell.y, gridSize), anchorCenter) <= unit
+    measureDist(cellCenter(cell.x, cell.y, gridSize), anchorCenter) <= unit
   );
 
   if (adjacent.length) {
     if (secondaryToken) {
       adjacent.sort((a, b) => {
-        const da = canvas.grid.measureDistance(cellCenter(a.x, a.y, gridSize), secondaryToken.center);
-        const db = canvas.grid.measureDistance(cellCenter(b.x, b.y, gridSize), secondaryToken.center);
+        const da = measureDist(cellCenter(a.x, a.y, gridSize), secondaryToken.center);
+        const db = measureDist(cellCenter(b.x, b.y, gridSize), secondaryToken.center);
         return da - db;
       });
     }
@@ -100,7 +121,7 @@ export function computeRayDestination(token, angleRad, maxSquares) {
     const dist = i * gridSize;
     const dx = Math.round(Math.cos(angleRad) * dist);
     const dy = Math.round(Math.sin(angleRad) * dist);
-    const candidate = canvas.grid.getSnappedPosition(token.x + dx, token.y + dy);
+    const candidate = snapTopLeft(token.x + dx, token.y + dy);
     if (candidate.x === current.x && candidate.y === current.y) continue;
 
     const fromCenter = cellCenter(current.x, current.y, gridSize);

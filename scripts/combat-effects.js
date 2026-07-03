@@ -1,6 +1,6 @@
-import { getItemCategory, meetsRequirements, computeRunicRarity, getRarityDie } from "./utils.js";
+import { getItemCategory, meetsRequirements, computeRunicRarity, getRarityDie, rollSave } from "./utils.js";
 import { getActiveCombo } from "./combo-registry.js";
-import { computeRayDestination, findReachableCells, findBestCellTowardTarget, findBestAdjacentCell } from "./movement.js";
+import { computeRayDestination, findReachableCells, findBestCellTowardTarget, findBestAdjacentCell, measureDist, angleBetween } from "./movement.js";
 
 const MODULE_ID = "gm-runic-items";
 
@@ -23,7 +23,10 @@ function resolveMessageTargets(msg) {
 
   const stored = msg.flags?.dnd5e?.targets ?? [];
   return stored
-    .map(t => fromUuidSync(t.uuid ?? t)?.getActiveTokens?.()[0])
+    .map(t => {
+      const doc = fromUuidSync(t.uuid ?? t);
+      return doc?.getActiveTokens?.()[0] ?? doc?.object ?? null;
+    })
     .filter(Boolean);
 }
 
@@ -35,36 +38,85 @@ async function moveTokenByAngle(token, angleRad, squares) {
 }
 
 export function registerCombatHooks() {
-  Hooks.on("dnd5e.rollAttack", onRollAttack);
-  Hooks.on("renderChatMessage", onRenderChatMessage);
+  // dnd5e 4.x deprecated dnd5e.rollAttack to use rollAttackV2; 5.x removed the old one
+  const dndMajor = parseInt(game.system?.version) || 0;
+  if (dndMajor >= 4) {
+    Hooks.on("dnd5e.rollAttackV2", onRollAttackV2);
+  } else {
+    Hooks.on("dnd5e.rollAttack", onRollAttackLegacy);
+  }
+
+  // renderChatMessage is deprecated in v13+ to use renderChatMessageHTML
+  const generation = game.release?.generation ?? 12;
+  Hooks.on(generation >= 13 ? "renderChatMessageHTML" : "renderChatMessage", onRenderChatMessage);
+
   Hooks.on("dnd5e.preApplyDamage", onPreApplyDamage);
-  Hooks.on("combatTurnStart", onCombatTurnStart);
-  Hooks.on("updateCombat", onUpdateCombat);
+  Hooks.on("combatTurnChange", onCombatTurnStart);
   Hooks.on("deleteCombat", onDeleteCombat);
   Hooks.on("dnd5e.restCompleted", onRestCompleted);
   Hooks.on("createActiveEffect", onCreateActiveEffect);
+
+  // players lack the permission to apply armor reactions so now they emit and the GM executes
+  game.socket.on(`module.${MODULE_ID}`, onSocketMessage);
 }
 
-async function onRollAttack(item, rollData) {
+async function onRollAttackV2(rolls, data) {
+  const item = data?.subject?.item;
+  const roll = rolls?.[0];
+  if (!item || !roll) return;
+  await handleAttackRoll(item, roll);
+}
+
+async function onRollAttackLegacy(item, roll) {
+  if (!item || !roll) return;
+  await handleAttackRoll(item, roll);
+}
+
+async function handleAttackRoll(item, roll) {
   const attacker = item.actor;
   if (!attacker) return;
-
-  const isSuccess = rollData?.isSuccess ?? false;
-  if (!isSuccess) return;
+  if (roll.isFumble) return;
 
   const targets = Array.from(game.user?.targets ?? []);
   if (targets.length === 0) return;
 
+  const hitTargets = [];
   for (const targetToken of targets) {
-    const targetActor = targetToken.actor;
-    if (!targetActor) continue;
-    await processArmorReactions(attacker, targetActor, item, rollData);
+    if (!targetToken.actor) continue;
+    const ac = targetToken.actor.system?.attributes?.ac?.value;
+    const hit = roll.isCritical === true
+      || roll.isSuccess === true
+      || (roll.isSuccess === undefined && ac != null && typeof roll.total === "number" && roll.total >= ac);
+    if (hit) hitTargets.push(targetToken);
   }
+  if (!hitTargets.length) return;
 
-  await processGuardiansRush(attacker, item, targets);
+  const payload = { type: "attackHit", itemUuid: item.uuid, targetTokenIds: hitTargets.map(t => t.id) };
+  if (game.users?.activeGM === game.user) await executeAttackHit(payload);
+  else game.socket.emit(`module.${MODULE_ID}`, payload);
 }
 
-async function processArmorReactions(attacker, targetActor, item, rollData) {
+async function onSocketMessage(data) {
+  if (data?.type !== "attackHit") return;
+  if (game.users?.activeGM !== game.user) return;
+  await executeAttackHit(data);
+}
+
+async function executeAttackHit({ itemUuid, targetTokenIds }) {
+  const item = await fromUuid(itemUuid).catch(() => null);
+  const attacker = item?.actor;
+  if (!item || !attacker) return;
+
+  const hitTargets = (targetTokenIds ?? []).map(id => canvas.tokens.get(id)).filter(t => t?.actor);
+  if (!hitTargets.length) return;
+
+  for (const targetToken of hitTargets) {
+    await processArmorReactions(attacker, targetToken.actor, item);
+  }
+  await processGuardiansRush(attacker, item, hitTargets);
+}
+
+async function processArmorReactions(attacker, targetActor, item) {
   const armor = getEquippedRunicArmor(targetActor);
   if (!armor || !meetsRequirements(armor)) return;
 
@@ -82,15 +134,15 @@ async function processArmorReactions(attacker, targetActor, item, rollData) {
     if (attackerToken && defenderToken) {
       const roll = await new Roll(die).evaluate();
       const squares = roll.total;
-      const ray = new Ray(defenderToken.center, attackerToken.center);
-      const movedSquares = await moveTokenByAngle(attackerToken, ray.angle, squares);
+      const angle = angleBetween(defenderToken.center, attackerToken.center);
+      const movedSquares = await moveTokenByAngle(attackerToken, angle, squares);
       const distance = movedSquares * 5;
 
       const existingBlock = attacker.effects.find(e => e.flags?.[MODULE_ID]?.effectKey === "emberveilBlocked");
       if (existingBlock) await attacker.deleteEmbeddedDocuments("ActiveEffect", [existingBlock.id]);
 
       await attacker.createEmbeddedDocuments("ActiveEffect", [{
-        name: "Emberveil Blocked",
+        name: game.i18n.localize(`${MODULE_ID}.effectNames.emberveilBlocked`),
         img: "icons/magic/fire/barrier-shield-explosion-orange.webp",
         origin: armor.uuid,
         duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -106,11 +158,11 @@ async function processArmorReactions(attacker, targetActor, item, rollData) {
 
     if (combo?.id === "ironwall") {
       await attacker.createEmbeddedDocuments("ActiveEffect", [{
-        name: "Bonus Action Blocked",
+        name: game.i18n.localize(`${MODULE_ID}.effectNames.bonusActionBlocked`),
         img: "icons/magic/control/debuff-energy-hold-teal-blue.webp",
         origin: armor.uuid,
         duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
-        changes: [{ key: "system.actions.bonus", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "0", priority: 20 }],
+        // this effect is a visible reminder only
         description: game.i18n.localize(`${MODULE_ID}.effects.wardpulseBlock`),
         flags: { [MODULE_ID]: { sourceItem: armor.id, effectKey: "wardpulseBlock" } }
       }]);
@@ -128,14 +180,14 @@ async function processArmorReactions(attacker, targetActor, item, rollData) {
       const nearbyAllies = canvas.tokens.placeables.filter(t =>
         t.actor?.id !== targetActor.id &&
         t.actor?.type === "character" &&
-        canvas.grid.measureDistance(defenderToken, t) <= radius
+        measureDist(defenderToken, t) <= radius
       );
       for (const allyToken of nearbyAllies) {
         const allyActor = allyToken.actor;
-        const existing = allyActor.effects.find(e => e.name === "Forgeshield" && e.origin === armor.uuid);
+        const existing = allyActor.effects.find(e => e.flags?.[MODULE_ID]?.effectKey === "forgeshieldAura" && e.origin === armor.uuid);
         if (existing) await allyActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
         await allyActor.createEmbeddedDocuments("ActiveEffect", [{
-          name: "Forgeshield",
+          name: game.i18n.localize(`${MODULE_ID}.effectNames.forgeshield`),
           img: "icons/magic/defensive/shield-barrier-glowing-blue.webp",
           origin: armor.uuid,
           duration: { rounds: 2, startRound: game.combat?.round ?? 0 },
@@ -156,15 +208,15 @@ async function processArmorReactions(attacker, targetActor, item, rollData) {
     const lastRound = targetActor.getFlag(MODULE_ID, "wardpulseRound") ?? -1;
     if (lastRound === currentRound) return;
 
-    const save = await attacker.rollAbilitySave("con", { flavor: "Wardpulse (DC 14)", dc: 14 });
-    if (save.total < 14) {
+    const saveTotal = await rollSave(attacker, "con", 14, game.i18n.format(`${MODULE_ID}.saves.wardpulse`, { dc: 14 }));
+    if (saveTotal < 14) {
       await targetActor.setFlag(MODULE_ID, "wardpulseRound", currentRound);
       await attacker.createEmbeddedDocuments("ActiveEffect", [{
-        name: "Bonus Action Blocked",
+        name: game.i18n.localize(`${MODULE_ID}.effectNames.bonusActionBlocked`),
         img: "icons/magic/control/debuff-energy-hold-teal-blue.webp",
         origin: armor.uuid,
         duration: { rounds: 1, startRound: currentRound },
-        changes: [{ key: "system.actions.bonus", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "0", priority: 20 }],
+        // This effect is a visible reminder only
         description: game.i18n.localize(`${MODULE_ID}.effects.wardpulseBlock`),
         flags: { [MODULE_ID]: { sourceItem: armor.id, effectKey: "wardpulseBlock" } }
       }]);
@@ -207,14 +259,14 @@ async function processGuardiansRush(attacker, item, targets) {
     const defenderToken = actor.getActiveTokens()[0];
     if (!defenderToken) continue;
 
-    const dist = canvas.grid.measureDistance(defenderToken, allyToken);
+    const dist = measureDist(defenderToken, allyToken);
     if (dist > actor.system.attributes.movement.walk) continue;
 
     const dialogKey = isFreeAction ? "dialogFreeAction" : "dialogContent";
-    const confirmed = await Dialog.confirm({
-      title: game.i18n.localize(`${MODULE_ID}.combat.vanguard.dialogTitle`),
+    const confirmed = await foundry.applications.api.DialogV2.confirm({
+      window: { title: game.i18n.localize(`${MODULE_ID}.combat.vanguard.dialogTitle`) },
       content: game.i18n.format(`${MODULE_ID}.combat.vanguard.${dialogKey}`, { actor: actor.name, ally: allyActor.name }),
-      defaultYes: false
+      rejectClose: false
     });
 
     if (!confirmed) continue;
@@ -245,11 +297,12 @@ async function processGuardiansRush(attacker, item, targets) {
     for (const e of existingDisadv) await attacker.deleteEmbeddedDocuments("ActiveEffect", [e.id]);
 
     await attacker.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Guardian's Rush Disadvantage",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.vanguardDisadvantage`),
       img: "icons/magic/air/air-pressure-shield-blue.webp",
       origin: actor.uuid,
       duration: { rounds: 1, startRound: game.combat.round },
-      changes: [{ key: "system.bonuses.attack.disadvantage", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "true", priority: 20 }],
+      // core dnd5e can't automate attack disadvantage so if midi-qol is active, midi-qol honors this flag
+      changes: [{ key: "flags.midi-qol.disadvantage.attack.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
       description: game.i18n.localize(`${MODULE_ID}.effects.vanguardDisadvantage`),
       flags: { [MODULE_ID]: { effectKey: "vanguardDisadvantage", sourceItem: armor.id } }
     }]);
@@ -262,9 +315,15 @@ async function processGuardiansRush(attacker, item, targets) {
 }
 
 async function onRenderChatMessage(msg, html, data) {
-  const itemUuid = msg.flags?.dnd5e?.roll?.itemUuid;
-  const rollType = msg.flags?.dnd5e?.roll?.type;
-  if (!itemUuid || rollType !== "damage") return;
+  // Only the active GM executes effects
+  if (game.users?.activeGM !== game.user) return;
+
+  const dndFlags = msg.flags?.dnd5e ?? {};
+  const rollType = dndFlags.roll?.type;
+  if (rollType !== "damage") return;
+  // pre-4.x stored itemUuid on the roll flag; 4.x+ stores it under item
+  const itemUuid = dndFlags.roll?.itemUuid ?? dndFlags.item?.uuid;
+  if (!itemUuid) return;
 
   const item = await fromUuid(itemUuid);
   const actor = item?.actor;
@@ -320,16 +379,16 @@ async function handleMeleeDamageEffects(item, actor, targetActor, targetToken, r
 
     let failed = isCritical;
     if (!failed) {
-      const save = await targetActor.rollAbilitySave("str", { flavor: "Stonecleft (DC 13)", dc: 13 });
-      failed = save.total < 13;
+      const saveTotal = await rollSave(targetActor, "str", 13, game.i18n.format(`${MODULE_ID}.saves.stonecleft`, { dc: 13 }));
+      failed = saveTotal < 13;
     }
 
     if (failed) {
       let movedSquares = 0;
       const originToken = canvas.tokens.get(msg.speaker.token);
       if (originToken) {
-        const ray = new Ray(originToken.center, targetToken.center);
-        movedSquares = await moveTokenByAngle(targetToken, ray.angle, squares);
+        const angle = angleBetween(originToken.center, targetToken.center);
+        movedSquares = await moveTokenByAngle(targetToken, angle, squares);
       }
       const distance = movedSquares * 5;
 
@@ -337,7 +396,7 @@ async function handleMeleeDamageEffects(item, actor, targetActor, targetToken, r
       if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
       await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-        name: "Staggered (Stonecleft)",
+        name: game.i18n.localize(`${MODULE_ID}.effectNames.stonecleft`),
         img: "icons/magic/movement/chevrons-down-yellow.webp",
         origin: item.uuid,
         duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -369,7 +428,7 @@ async function handleMeleeDamageEffects(item, actor, targetActor, targetToken, r
     if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
     await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Mirageward",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.mirageward`),
       img: "icons/magic/defensive/illusion-evasion-echo-purple.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -403,7 +462,7 @@ async function handleMeleeDamageEffects(item, actor, targetActor, targetToken, r
     if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
     await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Ruinmark (AC Cracked)",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.ruinmark`),
       img: "icons/magic/symbols/rune-sigil-red-orange.webp",
       origin: item.uuid,
       duration: { rounds, startRound: game.combat?.round ?? 0 },
@@ -423,7 +482,7 @@ async function handleMeleeDamageEffects(item, actor, targetActor, targetToken, r
     if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
     await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Emberbranded",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.emberbranded`),
       img: "icons/magic/fire/flame-burning-campfire-yellow-blue.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -444,12 +503,12 @@ async function handleMeleeDamageEffects(item, actor, targetActor, targetToken, r
         const allAllies = canvas.tokens.placeables.filter(t =>
           t.actor?.id !== actor.id &&
           (t.actor?.type === "character" || t.document.disposition >= 0) &&
-          canvas.grid.measureDistance(originToken, t) <= 30
+          measureDist(originToken, t) <= 30
         );
         const allyNames = allAllies.map(t => t.name).join(", ");
         ChatMessage.create({
           speaker: { actor },
-          content: game.i18n.format(`${MODULE_ID}.combat.forgebell.rang`, { ally: allyNames || "nearby allies", distance })
+          content: game.i18n.format(`${MODULE_ID}.combat.forgebell.rang`, { ally: allyNames || game.i18n.localize(`${MODULE_ID}.combat.forgebell.nearbyAllies`), distance })
         });
       }
     }
@@ -465,31 +524,31 @@ async function handleMeleeDamageEffects(item, actor, targetActor, targetToken, r
         t.actor &&
         t.actor.id !== actor.id &&
         (t.actor.type === "character" || t.document.disposition >= 0) &&
-        canvas.grid.measureDistance(originToken, t) <= 30
+        measureDist(originToken, t) <= 30
       );
 
       if (nearbyAllies.length === 0) {
         ChatMessage.create({
           speaker: { actor },
-          content: game.i18n.format(`${MODULE_ID}.combat.forgebell.rang`, { ally: "no allies in range", distance: maxFeet })
+          content: game.i18n.format(`${MODULE_ID}.combat.forgebell.rang`, { ally: game.i18n.localize(`${MODULE_ID}.combat.forgebell.noAllies`), distance: maxFeet })
         });
       } else if (nearbyAllies.length === 1) {
         await moveAllyTowardTarget(actor, nearbyAllies[0], targetToken, maxFeet);
       } else {
         const allyOptions = nearbyAllies.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
-        const selectedId = await new Promise(resolve => {
-          new Dialog({
-            title: "Forgebell - Reaction",
-            content: `<p>${game.i18n.format(`${MODULE_ID}.combat.forgebell.rang`, { ally: "an ally", distance: maxFeet })}</p><select name="ally" style="width:100%;margin-top:4px">${allyOptions}</select>`,
-            buttons: {
-              confirm: {
-                label: "Confirm",
-                callback: html => resolve(html.find('[name="ally"]').val())
-              },
-              cancel: { label: "Cancel", callback: () => resolve(null) }
+        const selectedId = await foundry.applications.api.DialogV2.wait({
+          window: { title: game.i18n.localize(`${MODULE_ID}.combat.forgebell.dialogTitle`) },
+          content: `<p>${game.i18n.format(`${MODULE_ID}.combat.forgebell.rang`, { ally: game.i18n.localize(`${MODULE_ID}.combat.forgebell.anAlly`), distance: maxFeet })}</p><select name="ally" style="width:100%;margin-top:4px">${allyOptions}</select>`,
+          buttons: [
+            {
+              action: "confirm",
+              label: game.i18n.localize(`${MODULE_ID}.common.confirm`),
+              default: true,
+              callback: (event, button) => button.form.elements.ally.value
             },
-            default: "confirm"
-          }).render(true);
+            { action: "cancel", label: game.i18n.localize(`${MODULE_ID}.common.cancel`), callback: () => null }
+          ],
+          rejectClose: false
         });
 
         if (selectedId) {
@@ -524,8 +583,8 @@ async function moveAllyTowardTarget(actor, allyToken, targetToken, maxFeet) {
 async function applySandgrasp(item, actor, targetActor, die, autoFail) {
   let failed = autoFail;
   if (!failed) {
-    const save = await targetActor.rollAbilitySave("str", { flavor: "Sandgrasp (DC 15)", dc: 15 });
-    failed = save.total < 15;
+    const saveTotal = await rollSave(targetActor, "str", 15, game.i18n.format(`${MODULE_ID}.saves.sandgrasp`, { dc: 15 }));
+    failed = saveTotal < 15;
   }
 
   if (failed) {
@@ -538,7 +597,7 @@ async function applySandgrasp(item, actor, targetActor, die, autoFail) {
     if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
     await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Sandgrasp",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.sandgrasp`),
       img: "icons/magic/earth/strike-fist-stone.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -569,7 +628,7 @@ async function applyMiragewardToAllies(item, actor) {
     const existing = allyActor.effects.find(e => e.flags?.[MODULE_ID]?.effectKey === "mirageward" && e.origin === item.uuid);
     if (existing) await allyActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
     await allyActor.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Mirageward (Party)",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.miragewardParty`),
       img: "icons/magic/defensive/illusion-evasion-echo-purple.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -586,11 +645,12 @@ async function handleRangedDamageEffects(item, actor, targetActor, targetToken, 
     const existing = targetActor.effects.find(e => e.flags?.[MODULE_ID]?.effectKey === "burntrace");
     if (!existing) {
       await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-        name: "Burntrace",
+        name: game.i18n.localize(`${MODULE_ID}.effectNames.burntrace`),
         img: "icons/magic/sonic/scream-wail-shout-teal.webp",
         origin: item.uuid,
         duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
-        changes: [{ key: "system.bonuses.attack.disadvantage", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "1", priority: 20 }],
+        // core dnd5e cannot automate attack disadvantage. Midi-qol honors this flag if active
+        changes: [{ key: "flags.midi-qol.disadvantage.attack.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
         description: game.i18n.localize(`${MODULE_ID}.effects.burntrace`),
         flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "burntrace" } }
       }]);
@@ -611,7 +671,7 @@ async function handleRangedDamageEffects(item, actor, targetActor, targetToken, 
     if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
     await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Sandhold",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.sandhold`),
       img: "icons/magic/control/hypnosis-mesmerism-watch.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -633,8 +693,8 @@ async function handleRangedDamageEffects(item, actor, targetActor, targetToken, 
     let movedSquares = 0;
     const originToken = canvas.tokens.get(msg.speaker.token) ?? actor.getActiveTokens()[0];
     if (originToken) {
-      const ray = new Ray(targetToken.center, originToken.center);
-      movedSquares = await moveTokenByAngle(targetToken, ray.angle, squares);
+      const angle = angleBetween(targetToken.center, originToken.center);
+      movedSquares = await moveTokenByAngle(targetToken, angle, squares);
     }
     const distance = movedSquares * 5;
 
@@ -649,7 +709,7 @@ async function handleRangedDamageEffects(item, actor, targetActor, targetToken, 
       if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
       await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-        name: "Sandhold (Anchored)",
+        name: game.i18n.localize(`${MODULE_ID}.effectNames.sandholdAnchored`),
         img: "icons/magic/control/hypnosis-mesmerism-watch.webp",
         origin: item.uuid,
         duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -667,13 +727,18 @@ async function handleRangedDamageEffects(item, actor, targetActor, targetToken, 
         const existingBT = targetActor.effects.find(e => e.flags?.[MODULE_ID]?.effectKey === "burntrace");
         if (!existingBT) {
           await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-            name: "Burntrace (Anchored)",
+            name: game.i18n.localize(`${MODULE_ID}.effectNames.burntraceAnchored`),
             img: "icons/magic/sonic/scream-wail-shout-teal.webp",
             origin: item.uuid,
             duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
             changes: [
-              { key: "system.bonuses.attack.disadvantage", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "1", priority: 20 },
-              { key: "system.bonuses.abilities.check", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "-1d20", priority: 20 }
+              // for midi-qol flag
+              { key: "flags.midi-qol.disadvantage.attack.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 },
+              { key: "flags.midi-qol.disadvantage.ability.check.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 },
+              // check disadvantage is automatable in core via per-ability roll.mode (dnd5e 4.1+)
+              ...["str", "dex", "con", "int", "wis", "cha"].map(a => ({
+                key: `system.abilities.${a}.check.roll.mode`, mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "-1", priority: 20
+              }))
             ],
             description: game.i18n.localize(`${MODULE_ID}.effects.burntraceAnchored`),
             flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "burntrace" } }
@@ -692,7 +757,7 @@ async function handleRangedDamageEffects(item, actor, targetActor, targetToken, 
     if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
     await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Scorcheye",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.scorcheye`),
       img: "icons/magic/perception/eye-ringed-glow-angry-red.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -733,16 +798,13 @@ async function handleRangedDamageEffects(item, actor, targetActor, targetToken, 
 
   if (runes.includes("wasteblight") && targetActor) {
     const isBlightField = combo?.id === "blight-field";
-    const poisonedStatus = CONFIG.statusEffects.find(e => e.id === "poisoned");
-    if (poisonedStatus && targetToken?.toggleEffect) {
-      await targetToken.toggleEffect(poisonedStatus, { active: true });
-    }
+    await targetActor.toggleStatusEffect("poisoned", { active: true });
 
     const existing = targetActor.effects.find(e => e.flags?.[MODULE_ID]?.effectKey === "wasteblight");
     if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
     await targetActor.createEmbeddedDocuments("ActiveEffect", [{
-      name: "Wasteblight",
+      name: game.i18n.localize(`${MODULE_ID}.effectNames.wasteblight`),
       img: "icons/magic/nature/plant-poison-mushroom-green.webp",
       origin: item.uuid,
       duration: { rounds: 10, startRound: game.combat?.round ?? 0 },
@@ -788,17 +850,16 @@ async function triggerAshcloud(templateDoc, die) {
 
   const affected = canvas.tokens.placeables.filter(t =>
     t.actor?.type === "npc" && t.document.disposition === -1 &&
-    canvas.grid.measureDistance(template.center, t.center) <= template.document.distance
+    measureDist(template.center, t.center) <= template.document.distance
   );
 
   for (const token of affected) {
-    const save = await token.actor.rollAbilitySave("con", { flavor: "Ashcloud (DC 14)", dc: 14 });
-    if (save.total < 14) {
+    const saveTotal = await rollSave(token.actor, "con", 14, game.i18n.format(`${MODULE_ID}.saves.ashcloud`, { dc: 14 }));
+    if (saveTotal < 14) {
       const roll = await new Roll(die).evaluate();
       await token.actor.applyDamage(roll.total);
 
-      const poisonedStatus = CONFIG.statusEffects.find(e => e.id === "poisoned");
-      if (poisonedStatus && token.toggleEffect) await token.toggleEffect(poisonedStatus, { active: true });
+      await token.actor.toggleStatusEffect("poisoned", { active: true });
 
       ChatMessage.create({
         speaker: { actor: token.actor },
@@ -817,7 +878,13 @@ async function onPreApplyDamage(actor, damageData) {
   const die = getRarityDie(rarity);
   const hp = actor.system.attributes.hp.value;
   const maxHP = actor.system.attributes.hp.max;
-  const predictedHP = hp - (damageData ?? 0);
+  // pre-4.x passes a number; 4.x+ passes an array of damage descriptions
+  const amount = typeof damageData === "number"
+    ? damageData
+    : Array.isArray(damageData)
+      ? damageData.reduce((sum, d) => sum + (Number(d?.value) || 0), 0)
+      : 0;
+  const predictedHP = hp - amount;
 
   if (runes.includes("stonewarden")) {
     const used = actor.getFlag(MODULE_ID, "stonewardenUsed");
@@ -828,7 +895,7 @@ async function onPreApplyDamage(actor, damageData) {
         speaker: { actor },
         content: game.i18n.format(`${MODULE_ID}.combat.stonewarden.flared`, { name: actor.name, total: roll.total })
       });
-      await actor.applyDamage(-roll.total);
+      await actor.applyDamage(roll.total, { multiplier: -1 });
     }
   }
 
@@ -845,7 +912,7 @@ async function onPreApplyDamage(actor, damageData) {
       const toAdd = allDamageTypes.filter(t => !current.includes(t));
 
       await actor.createEmbeddedDocuments("ActiveEffect", [{
-        name: "Ashen Mantle",
+        name: game.i18n.localize(`${MODULE_ID}.effectNames.ashenmantle`),
         img: "icons/magic/symbols/elements-air-earth-fire-water.webp",
         origin: armor.uuid,
         duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -855,7 +922,7 @@ async function onPreApplyDamage(actor, damageData) {
       }]);
 
       await actor.createEmbeddedDocuments("ActiveEffect", [{
-        name: "Ashen Mantle (Immovable)",
+        name: game.i18n.localize(`${MODULE_ID}.effectNames.ashenmantleImmovable`),
         img: "icons/magic/symbols/elements-air-earth-fire-water.webp",
         origin: armor.uuid,
         duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
@@ -872,20 +939,24 @@ async function onPreApplyDamage(actor, damageData) {
 }
 
 async function onCombatTurnStart(combat) {
+  // Active GM executes effects when occurs
+  if (game.users?.activeGM !== game.user) return;
+
   const actor = combat.combatant?.actor;
   if (!actor) return;
 
   const ashcloudTemplates = canvas.templates.placeables.filter(t =>
-    t.flags?.[MODULE_ID]?.clusterEffect === "ashcloud"
+    t.document.flags?.[MODULE_ID]?.clusterEffect === "ashcloud"
   );
   const token = actor.getActiveTokens()[0];
   if (token) {
     for (const template of ashcloudTemplates) {
-      if (canvas.grid.measureDistance(token.center, template.center) <= template.document.distance) {
-        await triggerAshcloud(template.document, template.flags?.[MODULE_ID]?.damageDie ?? "1d4");
+      const tFlags = template.document.flags?.[MODULE_ID] ?? {};
+      if (measureDist(token.center, template.center) <= template.document.distance) {
+        await triggerAshcloud(template.document, tFlags.damageDie ?? "1d4");
 
-        if (template.flags?.[MODULE_ID]?.blightField) {
-          const blightedActorId = template.flags[MODULE_ID].blightedActorId;
+        if (tFlags.blightField) {
+          const blightedActorId = tFlags.blightedActorId;
           const blightedActor = game.actors.get(blightedActorId);
           const blightedToken = blightedActor?.getActiveTokens()[0];
           if (blightedToken) {
@@ -893,13 +964,13 @@ async function onCombatTurnStart(combat) {
           }
         }
 
-        if (template.flags?.[MODULE_ID]?.blightField) {
+        if (tFlags.blightField) {
           const scorcheye = actor.effects.find(e => e.flags?.[MODULE_ID]?.effectKey === "scorcheye");
           if (!scorcheye) {
             await actor.createEmbeddedDocuments("ActiveEffect", [{
-              name: "Scorcheye (Blight Field)",
+              name: game.i18n.localize(`${MODULE_ID}.effectNames.scorcheyeBlightField`),
               img: "icons/magic/perception/eye-ringed-glow-angry-red.webp",
-              origin: template.uuid,
+              origin: template.document.uuid,
               duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
               description: game.i18n.localize(`${MODULE_ID}.effects.scorcheyeBlightField`),
               flags: { [MODULE_ID]: { effectKey: "scorcheye" } }
@@ -925,16 +996,15 @@ async function onCombatTurnStart(combat) {
     const { damageDie } = wasteblightEffect.flags[MODULE_ID];
     const adjacentTokens = canvas.tokens.placeables.filter(t =>
       t.actor && t.id !== blightedToken.id &&
-      canvas.grid.measureDistance(blightedToken.center, t.center) <= 5
+      measureDist(blightedToken.center, t.center) <= 5
     );
 
     for (const adjToken of adjacentTokens) {
       const adjActor = adjToken.actor;
       if (adjActor.effects.some(e => e.statuses?.has("poisoned"))) continue;
-      const save = await adjActor.rollAbilitySave("con", { flavor: "Wasteblight Spread (DC 13)", dc: 13 });
-      if (save.total < 13) {
-        const poisonedStatus = CONFIG.statusEffects.find(e => e.id === "poisoned");
-        if (poisonedStatus && adjToken.toggleEffect) await adjToken.toggleEffect(poisonedStatus, { active: true });
+      const saveTotal = await rollSave(adjActor, "con", 13, game.i18n.format(`${MODULE_ID}.saves.wasteblight`, { dc: 13 }));
+      if (saveTotal < 13) {
+        await adjActor.toggleStatusEffect("poisoned", { active: true });
 
         const roll = await new Roll(damageDie).evaluate();
         await adjActor.applyDamage(roll.total);
@@ -952,11 +1022,9 @@ async function onCombatTurnStart(combat) {
   }
 }
 
-async function onUpdateCombat(combat) {
-  // Per-turn tick effects for runes
-}
-
 async function onDeleteCombat(combat) {
+  if (game.users?.activeGM !== game.user) return;
+
   for (const combatant of combat.combatants) {
     const actor = combatant.actor;
     if (!actor) continue;
@@ -973,8 +1041,12 @@ async function onRestCompleted(actor) {
 }
 
 async function onCreateActiveEffect(effect) {
+  if (game.users?.activeGM !== game.user) return;
+
   const actor = effect.parent;
-  if (!actor || effect.name !== "Prone") return;
+  if (!actor) return;
+  const isProne = effect.statuses?.has?.("prone") || effect.name === "Prone";
+  if (!isProne) return;
 
   const armor = getEquippedRunicArmor(actor);
   if (!armor || !meetsRequirements(armor)) return;
@@ -986,7 +1058,7 @@ async function onCreateActiveEffect(effect) {
 
   const die = getRarityDie(computeRunicRarity(armor));
   const roll = await new Roll(die).evaluate();
-  await actor.applyDamage(-roll.total);
+  await actor.applyDamage(roll.total, { multiplier: -1 });
   ChatMessage.create({
     speaker: { actor },
     content: game.i18n.format(`${MODULE_ID}.combat.stonewarden.prone`, { name: actor.name, total: roll.total })

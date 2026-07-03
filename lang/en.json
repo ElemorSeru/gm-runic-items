@@ -67,7 +67,8 @@
       "melee": "Melee",
       "ranged": "Ranged",
       "armor": "Armor",
-      "noneForCategory": "No {category} presets saved yet."
+      "noneForCategory": "No {category} presets saved yet.",
+      "confirmDelete": "Delete preset \"{name}\"?"
     },
     "combo": {
       "label": "Combo"
@@ -127,7 +128,11 @@
       "forgebell": {
         "rang": "Forgebell rings. {ally} may use their reaction to move up to {distance} ft toward the target.",
         "moved": "Forgebell rings. {ally} automatically moves {distance} ft toward {target}, with {remaining} ft of the reaction move remaining for {ally} to use.",
-        "blocked": "Forgebell rings, but {ally} has no clear path toward {target}. The full {distance} ft reaction move remains available."
+        "blocked": "Forgebell rings, but {ally} has no clear path toward {target}. The full {distance} ft reaction move remains available.",
+        "dialogTitle": "Forgebell - Reaction",
+        "anAlly": "an ally",
+        "noAllies": "no allies in range",
+        "nearbyAllies": "nearby allies"
       },
       "burntrace": {
         "marked": "{target} is marked by Burntrace and suffers disadvantage on attacks for 1 round."
@@ -171,6 +176,41 @@
       "ashenmantleResistance": "Resistance to all damage types this round due to Ashen Mantle.",
       "ashenmantleImmovable": "Cannot be moved, pushed, or knocked prone this round due to Ashen Mantle.",
       "armorAc": "AC increased by {bonus} due to Runic Ward."
+    },
+    "common": {
+      "close": "Close",
+      "cancel": "Cancel",
+      "confirm": "Confirm"
+    },
+    "effectNames": {
+      "emberveilBlocked": "Emberveil Blocked",
+      "bonusActionBlocked": "Bonus Action Blocked",
+      "forgeshield": "Forgeshield",
+      "vanguardDisadvantage": "Guardian's Rush Disadvantage",
+      "stonecleft": "Staggered (Stonecleft)",
+      "mirageward": "Mirageward",
+      "miragewardParty": "Mirageward (Party)",
+      "ruinmark": "Ruinmark (AC Cracked)",
+      "emberbranded": "Emberbranded",
+      "sandgrasp": "Sandgrasp",
+      "burntrace": "Burntrace",
+      "burntraceAnchored": "Burntrace (Anchored)",
+      "sandhold": "Sandhold",
+      "sandholdAnchored": "Sandhold (Anchored)",
+      "scorcheye": "Scorcheye",
+      "scorcheyeBlightField": "Scorcheye (Blight Field)",
+      "wasteblight": "Wasteblight",
+      "ashenmantle": "Ashen Mantle",
+      "ashenmantleImmovable": "Ashen Mantle (Immovable)",
+      "armorAc": "Runic Ward ({item})",
+      "empowerment": "Runic Empowerment ({item})"
+    },
+    "saves": {
+      "wardpulse": "Wardpulse (DC {dc})",
+      "stonecleft": "Stonecleft (DC {dc})",
+      "sandgrasp": "Sandgrasp (DC {dc})",
+      "ashcloud": "Ashcloud (DC {dc})",
+      "wasteblight": "Wasteblight Spread (DC {dc})"
     }
   }
 }

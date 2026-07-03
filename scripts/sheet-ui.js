@@ -1,6 +1,7 @@
 import {
   getItemCategory, getRunePool,
-  computeRunicRarity, getRarityDie, meetsRequirements, withCache
+  computeRunicRarity, getRarityDie, meetsRequirements, withCache,
+  renderTemplateCompat
 } from "./utils.js";
 import {
   RUNE_REGISTRY,
@@ -283,40 +284,29 @@ function buildPresetPicker(pickerEl, item) {
 }
 
 async function showSavePresetDialog(panelEl, item) {
-  new Dialog({
-    title: game.i18n.localize(`${MODULE_ID}.presets.dialogTitle`),
-    content: `<div style="margin:8px 0"><input type="text" name="presetName" placeholder="${game.i18n.localize(`${MODULE_ID}.presets.namePlaceholder`)}" style="width:100%"/></div>`,
-    buttons: {
-      save: {
-        icon: '<i class="fas fa-bookmark"></i>',
-        label: game.i18n.localize(`${MODULE_ID}.presets.save`),
-        callback: async html => {
-          const name = html.find('[name="presetName"]').val().trim();
-          if (!name) return;
-          await savePreset(name, item);
-          const btn = panelEl.querySelector(".runic-btn-save-preset");
-          if (btn) {
-            const icon = btn.querySelector("i");
-            icon.className = "fas fa-check";
-            btn.classList.add("preset-saved");
-            setTimeout(() => {
-              icon.className = "fas fa-bookmark";
-              btn.classList.remove("preset-saved");
-            }, 1500);
-          }
-        }
-      },
-      cancel: { label: "Cancel" }
+  const name = await foundry.applications.api.DialogV2.prompt({
+    window: { title: game.i18n.localize(`${MODULE_ID}.presets.dialogTitle`) },
+    content: `<input type="text" name="presetName" placeholder="${game.i18n.localize(`${MODULE_ID}.presets.namePlaceholder`)}" autofocus/>`,
+    ok: {
+      icon: "fas fa-bookmark",
+      label: game.i18n.localize(`${MODULE_ID}.presets.save`),
+      callback: (event, button) => button.form.elements.presetName.value.trim()
     },
-    default: "save",
-    render: html => {
-      const input = html.find('[name="presetName"]');
-      input.focus();
-      input.on("keydown", e => {
-        if (e.key === "Enter") html.closest(".dialog").find(".dialog-button.save").click();
-      });
-    }
-  }).render(true);
+    rejectClose: false
+  });
+  if (!name) return;
+
+  await savePreset(name, item);
+  const btn = panelEl.querySelector(".runic-btn-save-preset");
+  if (btn) {
+    const icon = btn.querySelector("i");
+    icon.className = "fas fa-check";
+    btn.classList.add("preset-saved");
+    setTimeout(() => {
+      icon.className = "fas fa-bookmark";
+      btn.classList.remove("preset-saved");
+    }, 1500);
+  }
 }
 
 function clearCrack(rowEl) {
@@ -324,195 +314,374 @@ function clearCrack(rowEl) {
   rowEl?.querySelector(".runic-crack-message")?.remove();
 }
 
+function isCompendiumRef(ref) {
+  return typeof ref === "string" && ref.includes(".");
+}
+
+async function resolveLegacyRef(ref) {
+  if (!isCompendiumRef(ref)) return null;
+  const uuid = ref.startsWith("Compendium.") ? ref : `Compendium.${ref}`;
+  return await fromUuid(uuid).catch(() => null);
+}
+
+function findLegacyDuplicate(actor, item, flagKey, ref) {
+  if (!ref) return null;
+  const configured = actor.items.find(i =>
+    i.id !== item.id &&
+    i.flags?.[MODULE_ID]?.[flagKey] === ref &&
+    getItemCategory(i) &&
+    meetsRequirements(i)
+  );
+  if (configured) return configured;
+  const granted = actor.items.find(i =>
+    i.flags?.[MODULE_ID]?.grantKey === flagKey &&
+    i.flags?.[MODULE_ID]?.refId === ref &&
+    i.flags?.[MODULE_ID]?.sourceItemId !== item.id
+  );
+  if (granted) return actor.items.get(granted.flags[MODULE_ID].sourceItemId) ?? granted;
+  return null;
+}
+
 function checkAndRenderCracks(panelEl, flags, item) {
   const actor = item.actor;
   if (!actor) return;
 
-  const empSection = panelEl.querySelector(".runic-empowerment");
-  const empRow = empSection?.querySelector(".rune-slot-row");
+  const empRow = panelEl.querySelector(".runic-empowerment .rune-slot-row");
   if (empRow) {
-    const empEffect = actor.effects.find(e =>
-      e.origin === item.uuid && e.flags?.[MODULE_ID]?.effectKey === "empowerment"
-    );
-    const applied = {};
-    for (const change of (empEffect?.changes ?? [])) {
-      const m = change.key.match(/system\.abilities\.(\w+)\.value/);
-      if (m) applied[m[1]] = parseInt(change.value) || 0;
-    }
+    const tally = countEmpowermentTally(flags);
 
-    const tally = {};
-    for (let i = 0; i < 5; i++) {
-      const stat = flags[`emp-${i}`];
-      if (stat) tally[stat] = (tally[stat] ?? 0) + 1;
+    // bonuses from other active runic items on the same actor
+    const otherBonus = {};
+    for (const other of actor.items) {
+      if (other.id === item.id) continue;
+      const oFlags = other.flags?.[MODULE_ID];
+      if (!oFlags || !getItemCategory(other) || !meetsRequirements(other)) continue;
+      for (let i = 0; i < 5; i++) {
+        const stat = oFlags[`emp-${i}`];
+        if (stat) otherBonus[stat] = (otherBonus[stat] ?? 0) + 1;
+      }
     }
 
     const offending = [];
     for (const [stat, count] of Object.entries(tally)) {
-      const base = (actor.system.abilities[stat]?.value ?? 10) - (applied[stat] ?? 0);
-      if (base + stackBonus(count) > 30) offending.push(stat);
+      // source value ignores active effects, so this stays stable while effect sync is in flight
+      const base = actor.system._source?.abilities?.[stat]?.value
+        ?? actor.system.abilities?.[stat]?.value ?? 10;
+      if (base + stackBonus(count) + (otherBonus[stat] ?? 0) > 30) offending.push(stat);
     }
 
     if (offending.length > 0) {
       const colors = offending.map(s => ABILITY_OPTIONS.find(o => o.key === s)?.color ?? "#888");
       const label = offending.map(s => s.toUpperCase()).join(", ");
+      const anchor = panelEl.querySelector(`.rune-slot[data-section="empowerment"][data-rune-id="${offending[0]}"]`);
+      const fingerprint = offending.map(s => s + (tally[s] ?? 0)).join(".");
       renderSectionCrack(
         empRow,
         colors,
         game.i18n.format(`${MODULE_ID}.crack.statOverCap`, { stats: label }),
-        item.id + "-emp",
-        "M 47,45 L 53,22 L 60,58 L 67,20 L 74,50 L 80,18 L 87,52 L 93,30 L 98,45 M 53,22 L 57,38 L 63,28 M 60,58 L 55,66 L 58,74 M 67,20 L 71,10 L 76,22"
+        crackSeedFor(item, "emp", fingerprint),
+        anchor
       );
     } else {
+      clearCrackNonce(item, "emp");
       clearCrack(empRow);
     }
   }
 
-  const legacySection = panelEl.querySelector(".runic-legacy");
-  const legacyRow = legacySection?.querySelector(".rune-slot-row");
+  const legacyRow = panelEl.querySelector(".runic-legacy .rune-slot-row");
   if (legacyRow) {
-    const featUuid = flags["legacy-feat"] ?? null;
-    const spellUuid = flags["legacy-spell"] ?? null;
+    const featRef = flags["legacy-feat"] || null;
+    const spellRef = flags["legacy-spell"] || null;
 
-    if (featUuid || spellUuid) {
-      Promise.all([
-        featUuid ? fromUuid(featUuid).catch(() => null) : Promise.resolve(null),
-        spellUuid ? fromUuid(spellUuid).catch(() => null) : Promise.resolve(null)
-      ]).then(([featDoc, spellDoc]) => {
-        const featMissing = featUuid && !featDoc;
-        const spellMissing = spellUuid && !spellDoc;
-
-        const featDupGranted = featUuid && !featMissing && actor.items.find(i =>
-          i.flags?.[MODULE_ID]?.refId === featUuid &&
-          i.flags?.[MODULE_ID]?.sourceItemId !== item.id &&
-          i.flags?.[MODULE_ID]?.grantKey === "legacy-feat"
-        );
-        const spellDupGranted = spellUuid && !spellMissing && actor.items.find(i =>
-          i.flags?.[MODULE_ID]?.refId === spellUuid &&
-          i.flags?.[MODULE_ID]?.sourceItemId !== item.id &&
-          i.flags?.[MODULE_ID]?.grantKey === "legacy-spell"
-        );
-
-        const featBroken = featMissing || !!featDupGranted;
-        const spellBroken = spellMissing || !!spellDupGranted;
-
-        if (!featBroken && !spellBroken) {
-          clearCrack(legacyRow);
-          return;
-        }
-
-        const colors = [];
-        if (featBroken) colors.push(LEGACY_FEAT_COLOR);
-        if (spellBroken) colors.push(LEGACY_SPELL_COLOR);
-
-        const parts = [];
-        if (featMissing) {
-          parts.push(game.i18n.localize(`${MODULE_ID}.crack.featMissing`));
-        } else if (featDupGranted) {
-          const origin = actor.items.get(featDupGranted.flags[MODULE_ID].sourceItemId);
-          parts.push(game.i18n.format(`${MODULE_ID}.crack.featDuplicate`, { item: origin?.name ?? "another item" }));
-        }
-        if (spellMissing) {
-          parts.push(game.i18n.localize(`${MODULE_ID}.crack.spellMissing`));
-        } else if (spellDupGranted) {
-          const origin = actor.items.get(spellDupGranted.flags[MODULE_ID].sourceItemId);
-          parts.push(game.i18n.format(`${MODULE_ID}.crack.spellDuplicate`, { item: origin?.name ?? "another item" }));
-        }
-
-        renderSectionCrack(
-          legacyRow,
-          colors,
-          parts.join("  |  "),
-          item.id + "-legacy",
-          "M 42,48 L 50,24 L 58,58 L 66,30 M 66,30 L 74,14 L 83,24 L 92,16 M 66,30 L 73,52 L 82,64 L 92,56 M 50,24 L 46,38 M 58,58 L 54,68 L 56,74"
-        );
-      });
-    } else {
+    if (!featRef && !spellRef) {
+      clearCrackNonce(item, "legacy");
       clearCrack(legacyRow);
+      return;
     }
+
+    const featDup = findLegacyDuplicate(actor, item, "legacy-feat", featRef);
+    const spellDup = findLegacyDuplicate(actor, item, "legacy-spell", spellRef);
+
+    Promise.all([resolveLegacyRef(featRef), resolveLegacyRef(spellRef)]).then(([featDoc, spellDoc]) => {
+      if (!legacyRow.isConnected) return;
+
+      const featMissing = !!featRef && isCompendiumRef(featRef) && !featDoc;
+      const spellMissing = !!spellRef && isCompendiumRef(spellRef) && !spellDoc;
+
+      const featBroken = featMissing || !!featDup;
+      const spellBroken = spellMissing || !!spellDup;
+
+      if (!featBroken && !spellBroken) {
+        clearCrackNonce(item, "legacy");
+        clearCrack(legacyRow);
+        return;
+      }
+
+      const colors = [];
+      if (featBroken) colors.push(LEGACY_FEAT_COLOR);
+      if (spellBroken) colors.push(LEGACY_SPELL_COLOR);
+
+      const parts = [];
+      if (featMissing) {
+        parts.push(game.i18n.localize(`${MODULE_ID}.crack.featMissing`));
+      } else if (featDup) {
+        parts.push(game.i18n.format(`${MODULE_ID}.crack.featDuplicate`, { item: featDup.name }));
+      }
+      if (spellMissing) {
+        parts.push(game.i18n.localize(`${MODULE_ID}.crack.spellMissing`));
+      } else if (spellDup) {
+        parts.push(game.i18n.format(`${MODULE_ID}.crack.spellDuplicate`, { item: spellDup.name }));
+      }
+
+      const anchor = featBroken
+        ? panelEl.querySelector('.rune-slot[data-section="legacy-feat"]')
+        : panelEl.querySelector('.rune-slot[data-section="legacy-spell"]');
+      const fingerprint = `${featBroken ? "F" : ""}${spellBroken ? "S" : ""}-${featRef ?? ""}-${spellRef ?? ""}`;
+      renderSectionCrack(
+        legacyRow,
+        colors,
+        parts.join("  |  "),
+        crackSeedFor(item, "legacy", fingerprint),
+        anchor
+      );
+    });
   }
 }
 
-function parseCrackSubpaths(pathD) {
-  return pathD.trim().split(/(?=M[\s\d])/).filter(s => s.trim()).map(sub => {
-    const tokens = sub.replace(/[ML]/g, " ").trim().split(/[\s,]+/).filter(Boolean);
-    const pts = [];
-    for (let i = 0; i + 1 < tokens.length; i += 2)
-      pts.push([parseFloat(tokens[i]), parseFloat(tokens[i + 1])]);
-    return pts;
-  }).filter(pts => pts.length >= 2);
+let _crackUid = 0;
+
+function hashSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }
 
-function renderSectionCrack(sectionEl, colors, message, uid, pathD) {
+function mulberry32(a) {
+  return function() {
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+function crackDisplace(p0, p1, depth, rough, rnd, W, H) {
+  let pts = [p0, p1];
+  for (let d = 0; d < depth; d++) {
+    const out = [pts[0]];
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      const dx = b[0] - a[0], dy = b[1] - a[1];
+      const len = Math.hypot(dx, dy) || 1;
+      const off = (rnd() - 0.5) * 2 * len * rough;
+      out.push([(a[0] + b[0]) / 2 - dy / len * off, (a[1] + b[1]) / 2 + dx / len * off], b);
+    }
+    pts = out;
+  }
+  return pts.map(p => [Math.max(4, Math.min(W - 4, p[0])), Math.max(4, Math.min(H - 4, p[1]))]);
+}
+
+function crackTaperPoly(pts, w0, w1, rnd, scale = 1) {
+  const left = [], right = [];
+  for (let i = 0; i < pts.length; i++) {
+    const t = i / (pts.length - 1);
+    const jitter = 0.65 + rnd() * 0.7;
+    const w = Math.max(0.12, (w0 * (1 - t) + w1 * t) * jitter * scale) / 2;
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    let dx = b[0] - a[0], dy = b[1] - a[1];
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len; dy /= len;
+    left.push([pts[i][0] - dy * w, pts[i][1] + dx * w]);
+    right.push([pts[i][0] + dy * w, pts[i][1] - dx * w]);
+  }
+  const fmt = p => p[0].toFixed(1) + "," + p[1].toFixed(1);
+  return "M " + left.map(fmt).join(" L ") + " L " + right.reverse().map(fmt).join(" L ") + " Z";
+}
+
+function crackPolyline(pts) {
+  return "M " + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" L ");
+}
+
+function crackBranches(trunk, count, depth, rough, w0, rnd, lenScale, W, H) {
+  const out = [];
+  const trunkLen = Math.hypot(trunk[trunk.length - 1][0] - trunk[0][0], trunk[trunk.length - 1][1] - trunk[0][1]);
+  for (let b = 0; b < count; b++) {
+    const i = Math.floor(trunk.length * (0.15 + 0.65 * rnd()));
+    const p = trunk[i], q = trunk[Math.min(trunk.length - 1, i + 1)];
+    const baseAng = Math.atan2(q[1] - p[1], q[0] - p[0]);
+    const ang = baseAng + (rnd() < 0.5 ? 1 : -1) * (0.55 + 0.9 * rnd());
+    const len = trunkLen * lenScale * (0.6 + 0.8 * rnd());
+    const end = [p[0] + Math.cos(ang) * len, p[1] + Math.sin(ang) * len];
+    const t = i / (trunk.length - 1);
+    out.push({ pts: crackDisplace(p, end, depth, rough, rnd, W, H), w0: w0 * (1 - t * 0.6) * 0.5, w1: 0.15 });
+  }
+  return out;
+}
+
+function buildShatterCracks(rnd, W, H, origin) {
+  const [cx, cy] = origin;
+  const cracks = [];
+  const n = 7 + Math.floor(rnd() * 2);
+  const angles = [];
+  const dir = cx < W / 2 ? 1 : -1;
+  const remaining = dir > 0 ? W - cx : cx;
+  const vScale = Math.max(0.6, H / 88);
+  for (let i = 0; i < n; i++) angles.push((i / n) * Math.PI * 2 + (rnd() - 0.5) * 0.5);
+  let bestIdx = 0;
+  for (let i = 1; i < n; i++) {
+    if (Math.cos(angles[i]) * dir > Math.cos(angles[bestIdx]) * dir) bestIdx = i;
+  }
+  for (let i = 0; i < n; i++) {
+    const ang = angles[i];
+    const horiz = Math.cos(ang) * dir;
+    let len = (36 + rnd() * 44) * vScale;
+
+    if (i === bestIdx) {
+      len = remaining * (0.8 + 0.15 * rnd()) / Math.max(horiz, 0.35);
+    } else if (horiz > 0.2) {
+      len = Math.max(len, remaining * (0.45 + 0.5 * rnd()) / Math.max(horiz, 0.35));
+    }
+    const end = [cx + Math.cos(ang) * len, cy + Math.sin(ang) * len * 0.42];
+    const pts = crackDisplace([cx, cy], end, 4, 0.13, rnd, W, H);
+    cracks.push({ pts, w0: 4.4, w1: 0.15 });
+    if (len > W * 0.4) cracks.push(...crackBranches(pts, 2, 3, 0.22, 3.2, rnd, 0.16, W, H));
+  }
+  for (let i = 0; i < 3; i++) {
+    const k = Math.floor(rnd() * n);
+    const r = (15 + rnd() * 24) * vScale;
+    const a1 = angles[k] + 0.15, a2 = angles[(k + 1) % n] - 0.15;
+    const p1 = [cx + Math.cos(a1) * r * 1.5, cy + Math.sin(a1) * r * 0.45];
+    const p2 = [cx + Math.cos(a2) * r * 1.5, cy + Math.sin(a2) * r * 0.45];
+    cracks.push({ pts: crackDisplace(p1, p2, 3, 0.2, rnd, W, H), w0: 1.5, w1: 0.5 });
+  }
+  return cracks;
+}
+
+function buildFissureCracks(rnd, W, H, origin) {
+  const [cx, cy] = origin;
+  const dir = cx < W / 2 ? 1 : -1;
+  const remaining = dir > 0 ? W - cx : cx;
+  const backSpan = dir > 0 ? cx : W - cx;
+  const cracks = [];
+  const trunk = crackDisplace(
+    [cx, cy],
+    [cx + dir * remaining * (0.8 + 0.15 * rnd()), cy + (rnd() - 0.5) * H * 0.5],
+    5, 0.16, rnd, W, H
+  );
+  cracks.push({ pts: trunk, w0: 5.5, w1: 0.2 });
+  const back = crackDisplace(
+    [cx, cy],
+    [cx - dir * backSpan * (0.35 + 0.35 * rnd()), cy + (rnd() - 0.5) * H * 0.4],
+    4, 0.2, rnd, W, H
+  );
+  cracks.push({ pts: back, w0: 4.0, w1: 0.15 });
+  cracks.push(...crackBranches(trunk, 3, 3, 0.24, 5.5, rnd, 0.14, W, H));
+  cracks.push(...crackBranches(back, 1, 3, 0.24, 4.0, rnd, 0.16, W, H));
+  return cracks;
+}
+
+const _crackNonce = new Map();
+
+function crackSeedFor(item, section, fingerprint) {
+  const key = `${item.id}-${section}`;
+  if (!_crackNonce.has(key)) _crackNonce.set(key, Math.floor(Math.random() * 1e9));
+  return `${key}-${fingerprint}-${_crackNonce.get(key)}`;
+}
+
+function clearCrackNonce(item, section) {
+  _crackNonce.delete(`${item.id}-${section}`);
+}
+
+function renderSectionCrack(sectionEl, colors, message, seedKey, anchorEl = null, retried = false) {
   sectionEl.querySelector(".runic-crack-overlay")?.remove();
   sectionEl.querySelector(".runic-crack-message")?.remove();
 
-  const svg = document.createElementNS(SVG_NS, "svg");
-  svg.classList.add("runic-crack-overlay");
-  svg.setAttribute("viewBox", "0 0 100 100");
-  svg.setAttribute("preserveAspectRatio", "none");
-
-  let strokeColor = colors[0];
-  if (colors.length > 1) {
-    const gradId = `crack-grad-${uid}`;
-    const defs = document.createElementNS(SVG_NS, "defs");
-    const grad = document.createElementNS(SVG_NS, "linearGradient");
-    grad.setAttribute("id", gradId);
-    grad.setAttribute("x1", "0%");
-    grad.setAttribute("y1", "0%");
-    grad.setAttribute("x2", "100%");
-    grad.setAttribute("y2", "0%");
-    colors.forEach((color, ci) => {
-      const stop = document.createElementNS(SVG_NS, "stop");
-      stop.setAttribute("offset", `${(ci / (colors.length - 1)) * 100}%`);
-      stop.setAttribute("stop-color", color);
-      grad.appendChild(stop);
+  if (!sectionEl.clientWidth && !retried) {
+    requestAnimationFrame(() => {
+      if (sectionEl.isConnected) renderSectionCrack(sectionEl, colors, message, seedKey, anchorEl, true);
     });
-    defs.appendChild(grad);
-    svg.appendChild(defs);
-    strokeColor = `url(#${gradId})`;
+    return;
   }
 
-  const subpaths = parseCrackSubpaths(pathD);
-  const trunk = subpaths[0] ?? [];
-  const SD = 0.09, SA = 0.16;
+  const W = sectionEl.clientWidth || 420;
+  const H = sectionEl.clientHeight || 88;
+  const rnd = mulberry32(hashSeed(seedKey));
+  const id = `runic-crk-${_crackUid++}`;
 
-  subpaths.forEach((pts, pathIdx) => {
-    const isBranch = pathIdx > 0;
-    const n = pts.length - 1;
-    let t0 = 0;
-    if (isBranch) {
-      for (let ti = 0; ti < trunk.length; ti++) {
-        if (Math.abs(trunk[ti][0] - pts[0][0]) < 0.5 && Math.abs(trunk[ti][1] - pts[0][1]) < 0.5) {
-          t0 = ti * SD;
-          break;
-        }
-      }
+  let origin = [W * (0.18 + rnd() * 0.16), H * (0.38 + rnd() * 0.24)];
+  if (anchorEl) {
+    const rowRect = sectionEl.getBoundingClientRect();
+    const aRect = anchorEl.getBoundingClientRect();
+    if (aRect.width) {
+      origin = [
+        aRect.left - rowRect.left + aRect.width / 2,
+        aRect.top - rowRect.top + aRect.height / 2
+      ];
     }
-    for (let i = 0; i < n; i++) {
-      const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
-      const bell = Math.sin(Math.PI * (i + 0.5) / n);
-      const ratio = n > 1 ? i / (n - 1) : 0;
-      const dw = isBranch ? (4.5 - ratio * 3.0).toFixed(1) : (2.5 + bell * 6.0).toFixed(1);
-      const lw = isBranch ? (2.0 - ratio * 1.4).toFixed(1) : (1.0 + bell * 2.8).toFixed(1);
-      const delay = (t0 + i * SD).toFixed(2);
-      const len = (Math.hypot(x2 - x1, y2 - y1) * 4 + 8).toFixed(1);
-      const d = `M ${x1},${y1} L ${x2},${y2}`;
-      [["rgba(0,0,0,.92)", dw], [strokeColor, lw]].forEach(([s, w]) => {
-        const p = document.createElementNS(SVG_NS, "path");
-        p.setAttribute("d", d);
-        p.setAttribute("stroke", s);
-        p.setAttribute("stroke-width", w);
-        p.setAttribute("fill", "none");
-        p.setAttribute("stroke-linecap", "round");
-        p.setAttribute("stroke-linejoin", "round");
-        p.setAttribute("vector-effect", "non-scaling-stroke");
-        p.style.cssText = `stroke-dasharray:${len};stroke-dashoffset:${len};animation:crack-draw ${SA}s ease-out ${delay}s forwards`;
-        svg.appendChild(p);
-      });
-    }
-  });
+  }
 
-  sectionEl.prepend(svg);
+  // mix of shatter webs and fissures to randomize
+  const buildCracks = rnd() < 0.55 ? buildShatterCracks : buildFissureCracks;
+  const cracks = buildCracks(rnd, W, H, origin);
+
+  const col = colors.length > 1 ? `url(#${id}-g)` : colors[0];
+  const gradDef = colors.length > 1
+    ? `<linearGradient id="${id}-g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${W}" y2="0">` +
+      colors.map((c, i) => `<stop offset="${(i / (colors.length - 1)) * 100}%" stop-color="${c}"/>`).join("") +
+      `</linearGradient>`
+    : "";
+
+  const strokePass = (wMul, op) => cracks.map(c =>
+    `<path d="${crackPolyline(c.pts)}" stroke="${col}" stroke-width="${Math.max(0.8, c.w0 * wMul).toFixed(1)}" fill="none" stroke-linecap="round" stroke-linejoin="round" opacity="${op}"/>`
+  ).join("");
+
+  const hotColor = colors[0];
+  const hotDef = `<radialGradient id="${id}-h"><stop offset="0%" stop-color="${hotColor}" stop-opacity="0.35"/><stop offset="45%" stop-color="${hotColor}" stop-opacity="0.1"/><stop offset="100%" stop-color="${hotColor}" stop-opacity="0"/></radialGradient>`;
+  const hotspot = `<ellipse cx="${origin[0].toFixed(1)}" cy="${origin[1].toFixed(1)}" rx="${Math.min(W * 0.18, H * 1.3).toFixed(0)}" ry="${(H * 0.42).toFixed(0)}" fill="url(#${id}-h)"/>`;
+
+  // screen blended multi-pass glow
+  const glow = `<g class="runic-crack-pulse" style="mix-blend-mode:screen">${hotspot}<g filter="url(#${id}-b1)">${strokePass(4.0, 0.07)}</g><g filter="url(#${id}-b2)">${strokePass(2.0, 0.13)}${strokePass(1.0, 0.2)}</g></g>`;
+  const fissure = cracks.map(c => `<path d="${crackTaperPoly(c.pts, c.w0, c.w1, rnd)}" fill="rgba(5,3,12,0.96)"/>`).join("");
+  const core = cracks.map(c => `<path d="${crackTaperPoly(c.pts, c.w0, c.w1, rnd, 0.38)}" fill="${col}" opacity="0.95"/>`).join("");
+
+  let embers = "";
+  for (let i = 0; i < 10; i++) {
+    const c = cracks[Math.floor(rnd() * cracks.length)];
+    const p = c.pts[Math.floor(rnd() * c.pts.length)];
+    const dur = (1.5 + rnd() * 2.4).toFixed(2);
+    const delay = (rnd() * 2.6).toFixed(2);
+    const dx = ((rnd() - 0.5) * 20).toFixed(1);
+    const dy = (-(9 + rnd() * 18)).toFixed(1);
+    embers += `<circle class="runic-crack-ember" style="--d:${delay}s;--dur:${dur}s;--dx:${dx}px;--dy:${dy}px" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(0.6 + rnd() * 1.1).toFixed(1)}" fill="${colors[i % colors.length]}"/>`;
+  }
+
+  const rMax = Math.ceil(Math.max(
+    Math.hypot(origin[0], origin[1]),
+    Math.hypot(W - origin[0], origin[1]),
+    Math.hypot(origin[0], H - origin[1]),
+    Math.hypot(W - origin[0], H - origin[1])
+  ) + 70);
+  const reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
+  const maskDef =
+    `<mask id="${id}-m" maskUnits="userSpaceOnUse" x="-60" y="-60" width="${W + 120}" height="${H + 120}">` +
+    `<circle cx="${origin[0].toFixed(1)}" cy="${origin[1].toFixed(1)}" r="${reducedMotion ? rMax : 0}" fill="#fff">` +
+    (reducedMotion ? "" : `<animate attributeName="r" values="0;${Math.round(rMax * 0.22)};${rMax}" keyTimes="0;0.5;1" dur="1.9s" fill="freeze" calcMode="spline" keySplines="0.45 0.05 0.55 0.5;0.15 0.6 0.25 1"/>`) +
+    `</circle></mask>`;
+
+  const svgMarkup =
+    `<svg class="runic-crack-overlay" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<defs>${gradDef}${hotDef}` +
+    `<filter id="${id}-b1" filterUnits="userSpaceOnUse" x="-60" y="-60" width="${W + 120}" height="${H + 120}"><feGaussianBlur stdDeviation="6"/></filter>` +
+    `<filter id="${id}-b2" filterUnits="userSpaceOnUse" x="-60" y="-60" width="${W + 120}" height="${H + 120}"><feGaussianBlur stdDeviation="2.5"/></filter>` +
+    `</defs>` +
+    maskDef +
+    `<g mask="url(#${id}-m)">${glow}${fissure}${core}${embers}</g>` +
+    `</svg>`;
+
+  sectionEl.insertAdjacentHTML("afterbegin", svgMarkup);
 
   const msg = document.createElement("div");
   msg.className = "runic-crack-message";
@@ -523,38 +692,47 @@ function renderSectionCrack(sectionEl, colors, message, uid, pathD) {
 }
 
 export function registerSheetHooks() {
+  // AppV1 sheets (dnd5e 3.x/4.x) fire renderItemSheet5e with jQuery html;
+  // AppV2 sheets (dnd5e 5.x / core v13+) fire render hooks with an HTMLElement
   Hooks.on("renderItemSheet5e", onRenderItemSheet);
+  Hooks.on("renderItemSheetV2", onRenderItemSheet);
   Hooks.on("updateItem", onUpdateItem);
   Hooks.on("renderActorSheet", onRenderActorSheet);
+  Hooks.on("renderActorSheetV2", onRenderActorSheet);
 }
 
 async function onRenderItemSheet(app, html, data) {
-  const item = app.object;
-  if (!getItemCategory(item)) return;
+  const item = app.item ?? app.object ?? app.document;
+  if (!item || !getItemCategory(item)) return;
 
-  const detailsTab = html.find('.tab.details[data-tab="details"]');
-  if (!detailsTab.length) return;
+  const root = html instanceof HTMLElement ? html : html?.[0];
+  const detailsTab = root?.querySelector('.tab[data-tab="details"]');
+  if (!detailsTab) return;
 
-  const scrollTop = app._runicScrollRestore ?? detailsTab.scrollTop();
+  const scrollTop = app._runicScrollRestore ?? detailsTab.scrollTop;
   delete app._runicScrollRestore;
-  detailsTab.find(".runic-panel").remove();
+  detailsTab.querySelectorAll(".runic-panel").forEach(p => p.remove());
 
   const flags = foundry.utils.getProperty(item, `flags.${MODULE_ID}`) ?? {};
   const runePool = getRunePool(item);
-  const panel = $(await renderTemplate(TEMPLATE, buildTemplateContext(flags, item)));
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = await renderTemplateCompat(TEMPLATE, buildTemplateContext(flags, item));
+  const panel = wrapper.querySelector(".runic-panel");
+  if (!panel) return;
 
-  detailsTab.append(panel);
-  detailsTab.scrollTop(scrollTop);
+  detailsTab.appendChild(panel);
+  detailsTab.scrollTop = scrollTop;
 
-  initAllSockets(panel[0], flags, runePool, item);
+  initAllSockets(panel, flags, runePool, item);
 
   const minRole = game.settings.get(MODULE_ID, "minRoleToEdit") ?? 4;
-  const canEdit = data.editable && (game.user.role >= minRole);
+  const editable = app.isEditable ?? data?.editable ?? false;
+  const canEdit = editable && (game.user.role >= minRole);
 
   if (canEdit) {
-    bindPanelEvents(panel[0], item, runePool, flags);
+    bindPanelEvents(panel, item, runePool, flags);
   } else {
-    panel[0].classList.add("runic-panel-readonly");
+    panel.classList.add("runic-panel-readonly");
   }
 }
 
@@ -687,11 +865,16 @@ function bindPanelEvents(panelEl, item, runePool, flags) {
     if (el && !el.contains(event.relatedTarget)) hideTip();
   });
 
-  document.addEventListener("click", () => {
+  const onDocClick = () => {
+    if (!panelEl.isConnected) {
+      document.removeEventListener("click", onDocClick);
+      return;
+    }
     closeAllPickers(panelEl);
     const presetPicker = panelEl.querySelector(".runic-preset-picker");
     if (presetPicker) presetPicker.style.display = "none";
-  });
+  };
+  document.addEventListener("click", onDocClick);
   panelEl.addEventListener("click", e => e.stopPropagation());
 }
 

@@ -2,10 +2,10 @@
   "id": "gm-runic-items",
   "title": "GM Tools: Upgradable Runic Items",
   "description": "Inscribe named runes onto weapons and armor to grant combat effects, stat boosts, feats, and spells. Designed for GMs who want fast, thematic item upgrades without the crafting overhead.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "compatibility": {
     "minimum": "12",
-    "verified": "12"
+    "verified": "14"
   },
   "authors": [
     {
@@ -14,8 +14,12 @@
       "flags": {}
     }
   ],
-  "esmodules": [ "scripts/main.js" ],
-  "styles": [ "styles/runic-styles.css" ],
+  "esmodules": [
+    "scripts/main.js"
+  ],
+  "styles": [
+    "styles/runic-styles.css"
+  ],
   "languages": [
     {
       "lang": "en",
@@ -32,11 +36,12 @@
         "id": "dnd5e",
         "type": "system",
         "compatibility": {
-          "minimum": "4.3.0",
-          "maximum": "4.999",
-          "verified": "4.4.4"
+          "minimum": "4.0.0",
+          "maximum": "5.999",
+          "verified": "5.3.3"
         }
       }
     ]
-  }
+  },
+  "socket": true
 }

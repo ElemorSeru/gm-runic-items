@@ -50,7 +50,7 @@ async function syncArmorAcEffect(item, actor, active) {
   }
 
   await actor.createEmbeddedDocuments("ActiveEffect", [{
-    name: `Runic Ward (${item.name})`,
+    name: game.i18n.format(`${MODULE_ID}.effectNames.armorAc`, { item: item.name }),
     img: "icons/magic/defensive/shield-barrier-glowing-blue.webp",
     origin: item.uuid,
     disabled: false,
@@ -95,7 +95,7 @@ async function syncEmpowermentEffect(item, actor, active) {
   const desc = Object.entries(tally).map(([stat, count]) => `${stat.toUpperCase()}: +${count}`).join(", ");
 
   await actor.createEmbeddedDocuments("ActiveEffect", [{
-    name: `Runic Empowerment (${item.name})`,
+    name: game.i18n.format(`${MODULE_ID}.effectNames.empowerment`, { item: item.name }),
     img: empowermentIcon(item),
     origin: item.uuid,
     disabled: false,
