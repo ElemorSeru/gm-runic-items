@@ -1,8 +1,8 @@
 # GM Tools: Upgradable Runic Items
 
 [![Patreon](https://img.shields.io/badge/Patreon-F96854?style=for-the-badge&logo=patreon&logoColor=white)](https://patreon.com/Elemor)
-[![Foundry Version](https://img.shields.io/badge/Foundry-v12-informational?style=for-the-badge)](https://foundryvtt.com)
-[![Module Version](https://img.shields.io/badge/Version-1.0.0-success?style=for-the-badge)](https://github.com/ElemorSeru/gm-runic-items/releases/latest)
+[![Foundry Version](https://img.shields.io/badge/Foundry-v12--v14-informational?style=for-the-badge)](https://foundryvtt.com)
+[![Module Version](https://img.shields.io/badge/Version-1.1.0-success?style=for-the-badge)](https://github.com/ElemorSeru/gm-runic-items/releases/latest)
 <img alt="GitHub Downloads (all assets, latest release)" src="https://img.shields.io/github/downloads/ElemorSeru/gm-runic-items/latest/total">
 
 A Foundry VTT module for D&D 5e that lets GMs inscribe named runes onto weapons and armor, granting combat effects, stat boosts, feats, and spells. Designed for fast, thematic item upgrades without the overhead of crafting systems.
@@ -55,7 +55,7 @@ Ember Surge, Rift Break, Crystal Anchor, Blight Field, Ironwall, Morrain's Resol
 | Requirement | Version |
 |-------------|---------|
 | Foundry VTT | 12+ |
-| D&D 5e System | 4.3.0 - 4.x |
+| D&D 5e System | 4.3.0 - 5.x |
 
 ---
 
