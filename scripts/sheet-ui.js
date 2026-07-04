@@ -709,30 +709,38 @@ async function onRenderItemSheet(app, html, data) {
   const detailsTab = root?.querySelector('.tab[data-tab="details"]');
   if (!detailsTab) return;
 
-  const scrollTop = app._runicScrollRestore ?? detailsTab.scrollTop;
-  delete app._runicScrollRestore;
-  detailsTab.querySelectorAll(".runic-panel").forEach(p => p.remove());
+  // sibling render hooks fire this in the same tick; claim synchronously
+  // before the await so only one invocation injects the panel
+  if (app._runicInjecting) return;
+  app._runicInjecting = true;
+  try {
+    const scrollTop = app._runicScrollRestore ?? detailsTab.scrollTop;
+    delete app._runicScrollRestore;
+    detailsTab.querySelectorAll(".runic-panel").forEach(p => p.remove());
 
-  const flags = foundry.utils.getProperty(item, `flags.${MODULE_ID}`) ?? {};
-  const runePool = getRunePool(item);
-  const wrapper = document.createElement("div");
-  wrapper.innerHTML = await renderTemplateCompat(TEMPLATE, buildTemplateContext(flags, item));
-  const panel = wrapper.querySelector(".runic-panel");
-  if (!panel) return;
+    const flags = foundry.utils.getProperty(item, `flags.${MODULE_ID}`) ?? {};
+    const runePool = getRunePool(item);
+    const wrapper = document.createElement("div");
+    wrapper.innerHTML = await renderTemplateCompat(TEMPLATE, buildTemplateContext(flags, item));
+    const panel = wrapper.querySelector(".runic-panel");
+    if (!panel) return;
 
-  detailsTab.appendChild(panel);
-  detailsTab.scrollTop = scrollTop;
+    detailsTab.appendChild(panel);
+    detailsTab.scrollTop = scrollTop;
 
-  initAllSockets(panel, flags, runePool, item);
+    initAllSockets(panel, flags, runePool, item);
 
-  const minRole = game.settings.get(MODULE_ID, "minRoleToEdit") ?? 4;
-  const editable = app.isEditable ?? data?.editable ?? false;
-  const canEdit = editable && (game.user.role >= minRole);
+    const minRole = game.settings.get(MODULE_ID, "minRoleToEdit") ?? 4;
+    const editable = app.isEditable ?? data?.editable ?? false;
+    const canEdit = editable && (game.user.role >= minRole);
 
-  if (canEdit) {
-    bindPanelEvents(panel, item, runePool, flags);
-  } else {
-    panel.classList.add("runic-panel-readonly");
+    if (canEdit) {
+      bindPanelEvents(panel, item, runePool, flags);
+    } else {
+      panel.classList.add("runic-panel-readonly");
+    }
+  } finally {
+    app._runicInjecting = false;
   }
 }
 
