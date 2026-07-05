@@ -2,7 +2,7 @@
 
 ## Table of Contents
 
-1. [The Runic Panel](#the-runic-panel)
+1. [The Solvarian Runecraft Panel](#the-solvarian-runecraft-panel)
 2. [Runic Power](#runic-power)
 3. [Runic Empowerment](#runic-empowerment)
 4. [Runic Legacy](#runic-legacy)
@@ -12,12 +12,13 @@
 8. [Visual Indicators](#visual-indicators)
 9. [Settings and Access Control](#settings-and-access-control)
 10. [Tips and Common Questions](#tips-and-common-questions)
+11. [Requirements and Compatibility](#requirements-and-compatibility)
 
 ---
 
-## The Runic Panel
+## The Solvarian Runecraft Panel
 
-The Runic Panel appears in the **Details** tab of any weapon or armor item sheet. It has three sections:
+The Solvarian Runecraft panel appears in the **Details** tab of any weapon or armor item sheet. It has three sections:
 
 - **Runic Power** - sockets for active combat runes (up to 3)
 - **Runic Empowerment** - sockets for ability score boosts (up to 5)
@@ -36,6 +37,8 @@ Items must be **equipped** to activate rune effects. Items requiring attunement 
 Each item can hold up to **3 power runes**. The available runes depend on the item type: melee weapons, ranged weapons, and armor each have their own pool. No rune can appear twice on the same item.
 
 Effects fire through Foundry's hook system. No macros or manual steps are needed.
+
+A few effects impose disadvantage on attack rolls (Burntrace, Vanguard's Guardian's Rush, and the Crystal Anchor combo). Core dnd5e cannot automate attack-roll disadvantage, so these are applied through a midi-qol flag. With midi-qol installed the disadvantage is enforced automatically; without it, the effect still appears on the target as a reminder for you to apply by hand. See [Requirements and Compatibility](#requirements-and-compatibility).
 
 ### Melee Runes
 
@@ -57,7 +60,7 @@ Effects fire through Foundry's hook system. No macros or manual steps are needed
 
 **Sandhold** - On a hit, the target's movement speed is reduced by `{die}`x5 ft for 1 round.
 
-**Ashcloud** - On a hit, a cloud of ash erupts at the impact point. Creatures in the cloud make a DC 14 Constitution save or are poisoned and take `{die}` poison damage.
+**Ashcloud** - On a hit, a cloud of ash erupts at the impact point. Creatures in the cloud make a DC 14 Constitution save or are poisoned and take `{die}` poison damage. Only hostile NPC tokens are checked automatically; allied and player tokens in the cloud are left for you to resolve.
 
 **Undertow** - On a hit, the target is pulled `{die}`x5 ft toward the impact point.
 
@@ -69,7 +72,7 @@ Effects fire through Foundry's hook system. No macros or manual steps are needed
 
 **Emberveil** - Grants a passive AC bonus based on runic rarity (see Rarity System). When struck by a melee attack, the attacker is pushed `{die}`x5 ft directly away and cannot re-enter your space until the start of their next turn.
 
-**Stonewarden** - When the wearer drops below half HP, the rune flares and restores `{die}` HP. Once per combat.
+**Stonewarden** - When the wearer drops below half HP, the rune flares and restores `{die}` HP. It also flares if the wearer falls prone while already below half HP. Once per combat.
 
 **Vanguard** - When an ally is struck by a melee attack, the wearer may use their reaction to move adjacent to that ally. The attacker suffers disadvantage on all attacks until the end of the round.
 
@@ -193,11 +196,11 @@ Presets save and restore complete rune configurations (all power, empowerment, a
 
 ### Saving a Preset
 
-Click the **bookmark icon** in the runic panel header. A dialog asks for a name. After confirming, the bookmark icon briefly flashes with a checkmark to confirm the save.
+Click the **bookmark icon** in the Solvarian Runecraft panel header. A dialog asks for a name. After confirming, the bookmark icon briefly flashes with a checkmark to confirm the save.
 
 ### Loading a Preset
 
-Click the **folder icon** in the runic panel header. The picker shows only presets compatible with the current item's type (melee, ranged, or armor). Each entry in the list displays miniature power sockets with the actual rune glyphs and a rarity badge. Click an entry to apply it to the item.
+Click the **folder icon** in the Solvarian Runecraft panel header. The picker shows only presets compatible with the current item's type (melee, ranged, or armor). Each entry in the list displays miniature power sockets with the actual rune glyphs and a rarity badge. Click an entry to apply it to the item.
 
 ### Managing Presets
 
@@ -228,7 +231,7 @@ The crack disappears automatically when the issue is resolved. No page reload ne
 
 ## Settings and Access Control
 
-**Minimum Role to Edit Runes** - Controls which users can open rune pickers and change inscriptions. Setting it to Trusted grants access to Trusted Player, Assistant GM, and Game Master. Players below the threshold see the runic panel in read-only mode.
+**Minimum Role to Edit Runes** - Controls which users can open rune pickers and change inscriptions. Setting it to Trusted grants access to Trusted Player, Assistant GM, and Game Master. Players below the threshold see the Solvarian Runecraft panel in read-only mode.
 
 **Compendium Cache** - The legacy picker loads feat and spell compendiums on first use each session. Use Clear Cache to empty it or Refresh Cache to rebuild from currently loaded compendiums without reloading the world.
 
@@ -239,7 +242,7 @@ The crack disappears automatically when the issue is resolved. No page reload ne
 **Do runes work on unequipped items?**
 No. The item must be equipped. Attunement required items must also be attuned.
 
-**Can players see the runic panel?**
+**Can players see the Solvarian Runecraft panel?**
 Yes, but in read-only mode if their role is below the minimum set in settings. They can see what runes are inscribed but cannot change them.
 
 **Can the same rune appear on multiple items?**
@@ -256,3 +259,20 @@ Both grants exist on the actor, but the crack indicator appears on both items to
 
 **Do combo slots count toward rarity?**
 No. Combo slots are derived and display-only (in relation to rarity). Only the three power runes that form the combo count toward the score.
+
+---
+
+## Requirements and Compatibility
+
+| Requirement | Version |
+|-------------|---------|
+| Foundry VTT | 12 - 14 |
+| D&D 5e System | 4.0.0 - 5.x |
+
+Verified against Foundry v14 and dnd5e 5.3.3.
+
+**midi-qol (optional)** - Attack-roll disadvantage from Burntrace, Vanguard's Guardian's Rush, and the Crystal Anchor combo is applied through a midi-qol flag. With midi-qol installed it is enforced automatically; without it the effect still appears on the target as a reminder to apply by hand. The ability-check disadvantage added by Crystal Anchor is automated in core dnd5e 4.1+.
+
+**Automation scope** - Ashcloud (and the cloud spawned by the Blight Field combo) only rolls saves and applies poison damage for hostile NPC tokens. Allied and player tokens in the cloud are left for you to resolve. Wasteblight's adjacent-creature spread, by contrast, checks every adjacent creature.
+
+**Token movement** - Effects that push, pull, or reposition tokens (Stonecleft, Undertow, Emberveil, Forgebell, Guardian's Rush) act on the scene grid and need tokens placed on the canvas. Guardian's Rush also requires an active combat encounter.

@@ -11,13 +11,13 @@ A Foundry VTT module for D&D 5e that lets GMs inscribe named runes onto weapons 
 
 ## What It Does
 
-Each weapon or armor item sheet gains a **Runic Panel** in the Details tab with three upgrade tracks:
+Each weapon or armor item sheet gains a **Solvarian Runecraft** panel in the Details tab with three upgrade tracks:
 
 - **Runic Power** - up to 3 active combat runes that trigger automatically in combat
 - **Runic Empowerment** - up to 5 ability score boosts, each adding +1 to the chosen stat
 - **Runic Legacy** - one feat and one spell granted directly from any loaded compendium
 
-Runes activate when the item is equipped (and attuned if required). Effects fire through Foundry's hook system, so no macro setup or manual triggering is required.
+Runes activate when the item is equipped (and attuned if required). Effects fire through Foundry's hook system, so no macro setup or manual triggering is required. A few effects that impose attack-roll disadvantage rely on midi-qol to enforce automatically. See Compatibility Notes.
 
 ---
 
@@ -55,7 +55,7 @@ Ember Surge, Rift Break, Crystal Anchor, Blight Field, Ironwall, Morrain's Resol
 | Requirement | Version |
 |-------------|---------|
 | Foundry VTT | 12+ |
-| D&D 5e System | 4.3.0 - 5.x |
+| D&D 5e System | 4.0.0 - 5.x |
 
 ---
 
@@ -75,7 +75,7 @@ Ember Surge, Rift Break, Crystal Anchor, Blight Field, Ironwall, Morrain's Resol
 
 1. Open any weapon or armor item sheet
 2. Navigate to the **Details** tab
-3. Click any empty socket in the Runic Panel to open the rune picker
+3. Click any empty socket in the Solvarian Runecraft panel to open the rune picker
 4. Select a rune and effects activate automatically when the item is equipped and attuned (if required)
 5. The rarity badge updates as you fill slots
 
@@ -95,6 +95,9 @@ Ember Surge, Rift Break, Crystal Anchor, Blight Field, Ironwall, Morrain's Resol
 
 - Vanguard's Guardian's Rush moves tokens and requires an active combat encounter.
 - Legacy grants add items directly to the actor's item list tagged with the source item's name.
+- Attack-roll disadvantage (Burntrace, Vanguard's Guardian's Rush, and the Crystal Anchor combo) is applied through a midi-qol flag. Without midi-qol installed, those effects still appear on the target as a reminder but do not enforce the disadvantage automatically. The ability-check disadvantage from Crystal Anchor is automated in core dnd5e 4.1+.
+- Ashcloud (and the cloud spawned by the Blight Field combo) only rolls saves and applies poison damage for hostile NPC tokens. Allied and player tokens standing in the cloud are not affected by the automation.
+- The in-sheet panel is titled **Solvarian Runecraft**.
 
 ## About
 
