@@ -68,7 +68,10 @@
       "ranged": "Ranged",
       "armor": "Armor",
       "noneForCategory": "No {category} presets saved yet.",
-      "confirmDelete": "Delete preset \"{name}\"?"
+      "confirmDelete": "Delete preset \"{name}\"?",
+      "metaEmp": "Empowerment inscriptions: {count}",
+      "metaFeat": "Feat inscribed",
+      "metaSpell": "Spell inscribed"
     },
     "combo": {
       "label": "Combo"

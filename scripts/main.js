@@ -1,8 +1,11 @@
 import { registerCombatHooks } from "./combat-effects.js";
 import { registerSheetHooks }  from "./sheet-ui.js";
 import { clearLegacyCache, refreshLegacyCache } from "./legacy-cache.js";
-import { getPresets, deletePreset } from "./preset-manager.js";
+import { getPresets, deletePreset, presetRarity } from "./preset-manager.js";
+import { RUNE_REGISTRY } from "./rune-registry.js";
 import { loadTemplatesCompat } from "./utils.js";
+
+const ALL_RUNES = Object.values(RUNE_REGISTRY).flat();
 
 const MODULE_ID = "gm-runic-items";
 
@@ -64,7 +67,9 @@ Hooks.on("renderSettingsConfig", (_app, html) => {
   }
   if (!section) return;
 
-  const existingRow = section.querySelector(`[data-setting-id="${MODULE_ID}.cacheInfo"]`);
+  const existingRow =
+    section.querySelector(`[data-setting-id="${MODULE_ID}.cacheInfo"]`)
+    ?? root.querySelector(`[name="${MODULE_ID}.cacheInfo"]`)?.closest(".form-group");
 
   const i18n = game.i18n;
   const row = document.createElement("div");
@@ -79,7 +84,7 @@ Hooks.on("renderSettingsConfig", (_app, html) => {
         <i class="fas fa-sync-alt"></i> ${i18n.localize(`${MODULE_ID}.settings.refreshCache`)}
       </button>
     </div>
-    <p class="notes">${i18n.localize(`${MODULE_ID}.settings.cacheNotes`)}</p>
+    <p class="notes hint">${i18n.localize(`${MODULE_ID}.settings.cacheNotes`)}</p>
   `;
 
   if (existingRow) {
@@ -113,7 +118,7 @@ Hooks.on("renderSettingsConfig", (_app, html) => {
         <i class="fas fa-bookmark"></i> ${game.i18n.localize(`${MODULE_ID}.presets.settingsTitle`)}
       </button>
     </div>
-    <p class="notes">${game.i18n.localize(`${MODULE_ID}.presets.settingsHint`)}</p>
+    <p class="notes hint">${game.i18n.localize(`${MODULE_ID}.presets.settingsHint`)}</p>
   `;
   section.appendChild(presetSection);
 
@@ -121,6 +126,66 @@ Hooks.on("renderSettingsConfig", (_app, html) => {
     openPresetManager();
   });
 });
+
+const PRESET_SVG_NS = "http://www.w3.org/2000/svg";
+
+function presetMiniSockets(preset) {
+  let s = `<div class="preset-mini-sockets">`;
+  for (const runeId of preset.power) {
+    const rune = ALL_RUNES.find(r => r.id === runeId);
+    s += rune
+      ? `<div class="preset-mini-sock" data-rune-id="${rune.id}"></div>`
+      : `<div class="preset-mini-sock"></div>`;
+  }
+  return s + `</div>`;
+}
+
+function presetMetaMarkup(preset) {
+  const empCount = preset.empowerment.filter(Boolean).length;
+  let s = `<div class="preset-manager-meta">`;
+  if (empCount > 0) {
+    s += `<span class="preset-meta preset-meta-emp" data-tooltip="${game.i18n.format(`${MODULE_ID}.presets.metaEmp`, { count: empCount })}">`
+      + `<i class="fas fa-gem"></i>${empCount}</span>`;
+  }
+  if (preset.legacyFeat) {
+    s += `<span class="preset-meta preset-meta-feat" data-tooltip="${game.i18n.localize(`${MODULE_ID}.presets.metaFeat`)}"><i class="fas fa-star"></i></span>`;
+  }
+  if (preset.legacySpell) {
+    s += `<span class="preset-meta preset-meta-spell" data-tooltip="${game.i18n.localize(`${MODULE_ID}.presets.metaSpell`)}"><i class="fas fa-wand-sparkles"></i></span>`;
+  }
+  return s + `</div>`;
+}
+
+function buildRuneGlyphSvg(glyph, color, size) {
+  const svg = document.createElementNS(PRESET_SVG_NS, "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("width", size);
+  svg.setAttribute("height", size);
+  svg.classList.add("rune-glyph");
+
+  const path = document.createElementNS(PRESET_SVG_NS, "path");
+  path.setAttribute("d", glyph);
+  path.setAttribute("stroke", color);
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  path.classList.add("rune-path");
+
+  svg.appendChild(path);
+  return svg;
+}
+
+function injectPresetGlyphs(root) {
+  root.querySelectorAll(".preset-mini-sock[data-rune-id]").forEach(sock => {
+    if (sock.querySelector("svg")) return;
+    const rune = ALL_RUNES.find(r => r.id === sock.dataset.runeId);
+    if (!rune) return;
+    sock.classList.add("mini-filled");
+    sock.style.setProperty("--rune-color", rune.color);
+    sock.appendChild(buildRuneGlyphSvg(rune.glyph, rune.color, 12));
+  });
+}
 
 function buildPresetManagerContent() {
   const presets = getPresets();
@@ -141,9 +206,15 @@ function buildPresetManagerContent() {
       for (let i = 0; i < group.length; i++) {
         const preset = group[i];
         const shade = i % 2 === 0 ? "row-shade-a" : "row-shade-b";
+        const rarity = presetRarity(preset);
         html += `
           <div class="preset-manager-row ${shade}" data-preset-id="${preset.id}">
-            <span class="preset-manager-name">${preset.name}</span>
+            <div class="preset-manager-info">
+              ${presetMiniSockets(preset)}
+              <span class="preset-manager-name">${preset.name}</span>
+              ${presetMetaMarkup(preset)}
+              <span class="preset-entry-rarity" data-rarity="${rarity}">${rarity}</span>
+            </div>
             <button type="button" class="preset-manager-delete" data-preset-id="${preset.id}">
               <i class="fas fa-trash"></i> ${game.i18n.localize(`${MODULE_ID}.presets.delete`)}
             </button>
@@ -173,6 +244,7 @@ function openPresetManager() {
 }
 
 function wirePresetManagerButtons(root) {
+  injectPresetGlyphs(root);
   root.querySelectorAll(".preset-manager-delete").forEach(btn => {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.presetId;

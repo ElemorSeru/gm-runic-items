@@ -228,6 +228,35 @@ function addPresetButtons(panelEl, item) {
   });
 }
 
+function buildPresetMeta(preset) {
+  const meta = document.createElement("div");
+  meta.className = "preset-manager-meta";
+
+  const empCount = preset.empowerment.filter(Boolean).length;
+  if (empCount > 0) {
+    const chip = document.createElement("span");
+    chip.className = "preset-meta preset-meta-emp";
+    chip.dataset.tooltip = game.i18n.format(`${MODULE_ID}.presets.metaEmp`, { count: empCount });
+    chip.innerHTML = `<i class="fas fa-gem"></i>${empCount}`;
+    meta.appendChild(chip);
+  }
+  if (preset.legacyFeat) {
+    const chip = document.createElement("span");
+    chip.className = "preset-meta preset-meta-feat";
+    chip.dataset.tooltip = game.i18n.localize(`${MODULE_ID}.presets.metaFeat`);
+    chip.innerHTML = `<i class="fas fa-star"></i>`;
+    meta.appendChild(chip);
+  }
+  if (preset.legacySpell) {
+    const chip = document.createElement("span");
+    chip.className = "preset-meta preset-meta-spell";
+    chip.dataset.tooltip = game.i18n.localize(`${MODULE_ID}.presets.metaSpell`);
+    chip.innerHTML = `<i class="fas fa-wand-sparkles"></i>`;
+    meta.appendChild(chip);
+  }
+  return meta;
+}
+
 function buildPresetPicker(pickerEl, item) {
   pickerEl.innerHTML = "";
   const presets = getCompatiblePresets(item);
@@ -271,6 +300,8 @@ function buildPresetPicker(pickerEl, item) {
 
     entry.appendChild(sockWrap);
     entry.appendChild(name);
+    const meta = buildPresetMeta(preset);
+    if (meta.childElementCount) entry.appendChild(meta);
     entry.appendChild(rarity);
 
     entry.addEventListener("click", async () => {
