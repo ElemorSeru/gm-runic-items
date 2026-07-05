@@ -19,6 +19,10 @@ Each weapon or armor item sheet gains a **Solvarian Runecraft** panel in the Det
 
 Runes activate when the item is equipped (and attuned if required). Effects fire through Foundry's hook system, so no macro setup or manual triggering is required. A few effects that impose attack-roll disadvantage rely on midi-qol to enforce automatically. See Compatibility Notes.
 
+<p align="center">
+  <img src="assets/screenshots/ArmorDetailsFull.png" alt="Solvarian Runecraft panel on an armor item sheet" width="420">
+</p>
+
 ---
 
 ## Features
@@ -31,6 +35,18 @@ Runes activate when the item is equipped (and attuned if required). Effects fire
 - **Compendium legacy picker** - loads feats and spells from all loaded compendiums on first use and includes search filtering
 - **Role-based access** - configurable minimum role required to edit runes; players below the threshold see slots in read-only mode
 - **Fully localized** - all user-visible strings in `lang/en.json` and more to come as I have time
+
+<p align="center">
+  <img src="assets/screenshots/SlotsCombo.png" alt="Combo rune slot materialized when all three power slots form a matched trio" width="460">
+  <br>
+  <em>The Combo slot animates into existence when all three power runes form a matched trio.</em>
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/RunesOverloaded.png" alt="Color-coded crack warnings for an over-cap stat and a conflicting legacy grant" width="460">
+  <br>
+  <em>Crack indicators flag an over-cap ability score and a legacy feat/spell already granted by another item.</em>
+</p>
 
 ---
 
@@ -89,6 +105,14 @@ Ember Surge, Rift Break, Crystal Anchor, Blight Field, Ironwall, Morrain's Resol
 | Compendium Cache | Manage the feat/spell index used by the legacy picker. |
 | Rune Presets | Open the preset manager to view and delete saved configurations. |
 
+<p align="center">
+  <img src="assets/screenshots/Settings.png" alt="The module settings page" width="600">
+</p>
+
+<p align="center">
+  <img src="assets/screenshots/PresetManagementWindow.png" alt="The Rune Presets management window grouped by category" width="380">
+</p>
+
 ---
 
 ## Compatibility Notes
@@ -98,6 +122,39 @@ Ember Surge, Rift Break, Crystal Anchor, Blight Field, Ironwall, Morrain's Resol
 - Attack-roll disadvantage (Burntrace, Vanguard's Guardian's Rush, and the Crystal Anchor combo) is applied through a midi-qol flag. Without midi-qol installed, those effects still appear on the target as a reminder but do not enforce the disadvantage automatically. The ability-check disadvantage from Crystal Anchor is automated in core dnd5e 4.1+.
 - Ashcloud (and the cloud spawned by the Blight Field combo) only rolls saves and applies poison damage for hostile NPC tokens. Allied and player tokens standing in the cloud are not affected by the automation.
 - The in-sheet panel is titled **Solvarian Runecraft**.
+
+---
+
+## Screenshots
+
+### Assigning runes
+
+Click any empty socket to open its picker. Power runes show a tooltip describing their combat effect; empowerment runes each add +1 to the chosen ability.
+
+<p align="center">
+  <img src="assets/screenshots/RunicPowerMenu.png" alt="Power rune picker with a rune tooltip" width="400">
+  <img src="assets/screenshots/RunicEmpowermentMenu.png" alt="Empowerment picker with per-ability options" width="400">
+</p>
+
+### Legacy feats and spells
+
+The legacy sockets load feats and spells from every loaded compendium, with live search filtering.
+
+<p align="center">
+  <img src="assets/screenshots/RuneFeatMenu.png" alt="Legacy feat picker with search filtering" width="400">
+  <img src="assets/screenshots/RuneSpellMenu.png" alt="Legacy spell picker with search filtering" width="400">
+</p>
+
+### Presets
+
+Save an item's full rune configuration as a named preset, then load it onto any compatible item.
+
+<p align="center">
+  <img src="assets/screenshots/SaveRunePreset.png" alt="Save Rune Preset dialog" width="400">
+  <img src="assets/screenshots/LoadRunePreset.png" alt="Loading a saved preset onto a compatible item" width="400">
+</p>
+
+---
 
 ## About
 
