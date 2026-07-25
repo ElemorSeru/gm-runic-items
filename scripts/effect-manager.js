@@ -1,5 +1,6 @@
 import { getItemCategory, meetsRequirements, computeRunicRarity, getRarityAcBonus, withCache } from "./utils.js";
 import { ABILITY_OPTIONS } from "./rune-registry.js";
+import { getRuneDef } from "./rune-store.js";
 
 const MODULE_ID = "gm-runic-items";
 
@@ -33,7 +34,9 @@ async function syncArmorAcEffect(item, actor, active) {
   const rarity = computeRunicRarity(item);
   const bonus = getRarityAcBonus(rarity);
   const flags = item.flags[MODULE_ID] ?? {};
-  const hasWard = [flags["power-0"], flags["power-1"], flags["power-2"]].includes("emberveil");
+  const hasWard = [flags["power-0"], flags["power-1"], flags["power-2"]]
+    .filter(Boolean)
+    .some(id => getRuneDef(id)?.passiveAc === true);
   const want = active && hasWard && bonus > 0;
 
   const existing = actor.effects.find(e =>
@@ -120,10 +123,18 @@ async function syncGrantedItem(actor, sourceItem, grantKey, refId, active, resol
   if (existing && (!active || !refId || existing.flags[MODULE_ID]?.refId !== refId)) {
     if (actor.items.has(existing.id)) {
       await actor.deleteEmbeddedDocuments("Item", [existing.id]).catch(() => {});
+      await resyncSiblingLegacyGrants(actor, sourceItem.id, grantKey);
     }
   }
   if (!active || !refId) return;
   if (existing?.flags[MODULE_ID]?.refId === refId) return;
+
+  const dupe = actor.items.find(i =>
+    i.flags?.[MODULE_ID]?.grantKey === grantKey &&
+    i.flags?.[MODULE_ID]?.refId === refId &&
+    i.flags?.[MODULE_ID]?.sourceItemId !== sourceItem.id
+  );
+  if (dupe) return;
 
   return withCache("grant", `${actor.id}::${sourceItem.id}::${grantKey}::${refId}`, 500, async () => {
     const data = await resolver(refId);
@@ -136,6 +147,16 @@ async function syncGrantedItem(actor, sourceItem, grantKey, refId, active, resol
     }
     await actor.createEmbeddedDocuments("Item", [data]);
   });
+}
+
+async function resyncSiblingLegacyGrants(actor, excludeItemId, grantKey) {
+  const resolver = grantKey === "legacy-feat" ? resolveFeat : resolveSpell;
+  for (const sibling of actor.items) {
+    if (sibling.id === excludeItemId || !getItemCategory(sibling)) continue;
+    const refId = sibling.flags?.[MODULE_ID]?.[grantKey] ?? null;
+    if (!refId) continue;
+    await syncGrantedItem(actor, sibling, grantKey, refId, meetsRequirements(sibling), resolver);
+  }
 }
 
 // Formats (oldest to newest):

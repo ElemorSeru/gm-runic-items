@@ -1,9 +1,13 @@
 import { registerCombatHooks } from "./combat-effects.js";
-import { registerSheetHooks }  from "./sheet-ui.js";
+import { registerSheetHooks } from "./sheet-ui.js";
+import { registerTidy5eIntegration } from "./tidy5e-compat.js";
 import { clearLegacyCache, refreshLegacyCache } from "./legacy-cache.js";
 import { getPresets, deletePreset, presetRarity } from "./preset-manager.js";
 import { RUNE_REGISTRY } from "./rune-registry.js";
 import { loadTemplatesCompat } from "./utils.js";
+import { openRuneforge } from "./runeforge-app.js";
+import { registerUpdateChecker } from "./update-checker.js";
+import { runWorldDataCheck } from "./data-migration.js";
 
 const ALL_RUNES = Object.values(RUNE_REGISTRY).flat();
 
@@ -14,6 +18,8 @@ Hooks.once("init", () => {
 
   registerCombatHooks();
   registerSheetHooks();
+  registerTidy5eIntegration();
+  registerUpdateChecker();
 
   Handlebars.registerHelper("ifEquals", function(a, b, options) {
     return a === b ? options.fn(this) : options.inverse(this);
@@ -53,6 +59,40 @@ Hooks.once("init", () => {
     type: Array,
     default: []
   });
+
+  game.settings.register(MODULE_ID, "customRunes", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: []
+  });
+
+  game.settings.register(MODULE_ID, "customCombos", {
+    scope: "world",
+    config: false,
+    type: Array,
+    default: []
+  });
+
+  game.settings.register(MODULE_ID, "worldDataVersion", {
+    scope: "world",
+    config: false,
+    type: Number,
+    default: 0
+  });
+
+  game.keybindings.register(MODULE_ID, "openRuneforge", {
+    name: `${MODULE_ID}.runeforge.keybind`,
+    editable: [{ key: "KeyR", modifiers: ["Control", "Shift"] }],
+    onDown: () => {
+      openRuneforge();
+      return true;
+    }
+  });
+});
+
+Hooks.once("ready", () => {
+  runWorldDataCheck();
 });
 
 Hooks.on("renderSettingsConfig", (_app, html) => {

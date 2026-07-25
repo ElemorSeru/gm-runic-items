@@ -1,3 +1,9 @@
+const MODULE_ID = "gm-runic-items";
+
+function rrI18n(key) {
+  return game.i18n.localize(`${MODULE_ID}.rune.${key}`);
+}
+
 export const RUNE_REGISTRY = {
   melee: [
     {
@@ -5,7 +11,7 @@ export const RUNE_REGISTRY = {
       name: "Stonecleft",
       color: "#a04000",
       glyph: "M12,2L22,20L2,20ZM12,2L12,22M6,14L18,14",
-      description: "On a hit, the target makes a DC 13 Strength save or is pushed {die}x5 ft away and has their movement halved for 1 round. On a critical hit, they automatically fail the save.",
+      get description() { return rrI18n("stonecleft.description"); },
       effectKey: "stonecleft"
     },
     {
@@ -13,7 +19,7 @@ export const RUNE_REGISTRY = {
       name: "Mirageward",
       color: "#7fb3d3",
       glyph: "M4,12L8,6L12,4L16,6L20,12L16,18L12,20L8,18ZM11,11H13V13H11Z",
-      description: "On a hit, the target loses the ability to make opportunity attacks until the start of your next turn.",
+      get description() { return rrI18n("mirageward.description"); },
       effectKey: "mirageward"
     },
     {
@@ -21,7 +27,7 @@ export const RUNE_REGISTRY = {
       name: "Emberbrand",
       color: "#f39c12",
       glyph: "M12,22L12,9M8,15L12,9L16,15M10,5L12,2L14,5",
-      description: "On a critical hit, the target is branded with ember fire. Until the start of your next turn, allies who hit the target deal an extra {die} radiant damage.",
+      get description() { return rrI18n("emberbrand.description"); },
       effectKey: "emberbrand"
     },
     {
@@ -29,7 +35,7 @@ export const RUNE_REGISTRY = {
       name: "Sandgrasp",
       color: "#6c3483",
       glyph: "M4,4H20V20H4ZM4,12H20M12,4V20",
-      description: "On a hit, the target makes a DC 15 Strength save or their speed is reduced by {die}x5 ft until the end of their next turn.",
+      get description() { return rrI18n("sandgrasp.description"); },
       effectKey: "sandgrasp"
     },
     {
@@ -37,7 +43,7 @@ export const RUNE_REGISTRY = {
       name: "Ruinmark",
       color: "#c0392b",
       glyph: "M12,2L4,18L12,13L20,18L12,2M12,13L12,22",
-      description: "On a hit, the target's armor is cracked. Their AC is reduced by 2 for {die} rounds. Any attacker benefits from this opening.",
+      get description() { return rrI18n("ruinmark.description"); },
       effectKey: "ruinmark"
     },
     {
@@ -45,7 +51,7 @@ export const RUNE_REGISTRY = {
       name: "Forgebell",
       color: "#e67e22",
       glyph: "M4,20L4,10L8,4L12,10L16,4L20,10L20,20H4",
-      description: "On a hit, the rune rings like a forge bell. One ally within 30 ft may use their reaction to move up to {die}x5 ft toward the target.",
+      get description() { return rrI18n("forgebell.description"); },
       effectKey: "forgebell"
     }
   ],
@@ -55,7 +61,7 @@ export const RUNE_REGISTRY = {
       name: "Burntrace",
       color: "#27ae60",
       glyph: "M2,12L20,12M14,6L22,12L14,18M5,8V16",
-      description: "On a hit, a scorched mark is left on the target. They suffer disadvantage on attack rolls for 1 round.",
+      get description() { return rrI18n("burntrace.description"); },
       effectKey: "burntrace"
     },
     {
@@ -63,7 +69,7 @@ export const RUNE_REGISTRY = {
       name: "Sandhold",
       color: "#85c1e9",
       glyph: "M4,8H20M4,12H20M4,16H20M8,4L4,8M16,4L20,8",
-      description: "On a hit, desert sand hardens around the target. Their movement speed is reduced by {die}x5 ft for 1 round.",
+      get description() { return rrI18n("sandhold.description"); },
       effectKey: "sandhold"
     },
     {
@@ -71,7 +77,7 @@ export const RUNE_REGISTRY = {
       name: "Ashcloud",
       color: "#229954",
       glyph: "M12,4A8,8,0,1,1,11.99,4M6,8L4,6M18,8L20,6M18,16L20,18M6,16L4,18",
-      description: "On a hit, a cloud of rift ash erupts at the impact point. Creatures in the cloud must make a DC 14 Constitution save or be poisoned and take {die} poison damage.",
+      get description() { return rrI18n("ashcloud.description"); },
       effectKey: "ashcloud"
     },
     {
@@ -79,7 +85,7 @@ export const RUNE_REGISTRY = {
       name: "Undertow",
       color: "#5d6d7e",
       glyph: "M12,2L12,22M6,8L12,2L18,8M6,16L12,22L18,16M6,12L18,12",
-      description: "On a hit, rift energy drags the target {die}x5 ft toward the impact point.",
+      get description() { return rrI18n("undertow.description"); },
       effectKey: "undertow"
     },
     {
@@ -87,7 +93,7 @@ export const RUNE_REGISTRY = {
       name: "Scorcheye",
       color: "#a569bd",
       glyph: "M12,2L22,12L12,22L2,12ZM12,2L12,22M2,12L22,12",
-      description: "On a hit, the heat-haze clarity of the desert strips concealment. The target cannot benefit from cover or invisibility until the start of your next turn.",
+      get description() { return rrI18n("scorcheye.description"); },
       effectKey: "scorcheye"
     },
     {
@@ -95,7 +101,7 @@ export const RUNE_REGISTRY = {
       name: "Wasteblight",
       color: "#1e8449",
       glyph: "M4,7L8,4L12,7L16,4L20,7M4,14L8,11L12,14L16,11L20,14M12,14L12,22",
-      description: "On a hit, rift corruption spreads through the target. While poisoned, creatures ending their turn adjacent to them must make a DC 13 Constitution save or become poisoned and take {die} poison damage.",
+      get description() { return rrI18n("wasteblight.description"); },
       effectKey: "wasteblight"
     }
   ],
@@ -105,7 +111,7 @@ export const RUNE_REGISTRY = {
       name: "Emberveil",
       color: "#f1c40f",
       glyph: "M4,12L12,4L20,12L12,20ZM12,4L12,20M4,12L20,12",
-      description: "Grants a passive AC bonus based on runic rarity. When struck by a melee attack, the attacker is pushed {die}x5 ft directly away and cannot re-enter your space until the start of their next turn.",
+      get description() { return rrI18n("emberveil.description"); },
       effectKey: "emberveil"
     },
     {
@@ -113,7 +119,7 @@ export const RUNE_REGISTRY = {
       name: "Stonewarden",
       color: "#7f8c8d",
       glyph: "M4,20L4,10L12,3L20,10L20,20H4M9,20V13H15V20",
-      description: "When the wearer drops below half HP, the rune flares and restores {die} HP. Once per combat.",
+      get description() { return rrI18n("stonewarden.description"); },
       effectKey: "stonewarden"
     },
     {
@@ -121,7 +127,7 @@ export const RUNE_REGISTRY = {
       name: "Vanguard",
       color: "#2e86c1",
       glyph: "M5,4L12,2L19,4L19,14L12,22L5,14ZM12,8L12,18M8,12L12,8L16,12",
-      description: "When an ally is struck by a melee attack, the wearer may use their reaction to move adjacent to that ally. The attacker suffers disadvantage on all attacks until the end of the round.",
+      get description() { return rrI18n("vanguard.description"); },
       effectKey: "vanguard"
     },
     {
@@ -129,7 +135,7 @@ export const RUNE_REGISTRY = {
       name: "Wardpulse",
       color: "#5dade2",
       glyph: "M12,3A9,9,0,1,1,11.99,3M12,6A6,6,0,1,1,11.99,6M12,12V20",
-      description: "When struck by a melee attack, the attacker makes a DC 14 Constitution save or loses their bonus action until the end of their next turn. Once per round.",
+      get description() { return rrI18n("wardpulse.description"); },
       effectKey: "wardpulse"
     },
     {
@@ -137,7 +143,7 @@ export const RUNE_REGISTRY = {
       name: "Forgeshield",
       color: "#1a5276",
       glyph: "M5,4L12,2L19,4L19,14L12,22L5,14ZM8,7L12,5L16,7L16,14L12,19L8,14Z",
-      description: "When struck by a melee attack, allies within 10 ft of the wearer gain +2 AC for 2 rounds.",
+      get description() { return rrI18n("forgeshield.description"); },
       effectKey: "forgeshield"
     },
     {
@@ -145,35 +151,19 @@ export const RUNE_REGISTRY = {
       name: "Ashen Mantle",
       color: "#922b21",
       glyph: "M4,4H20V20H4ZM4,10H20M4,16H20M10,4V20M16,4V20",
-      description: "When the wearer drops to or below half HP for the first time, they gain resistance to all damage types for 1 round and cannot be moved or knocked prone while the resistance is active. Once per rest.",
+      get description() { return rrI18n("ashenmantle.description"); },
       effectKey: "ashenmantle"
     }
   ]
 };
 
-export const RARITY_DIE = {
-  Common: "1d4",
-  Uncommon: "1d4",
-  Rare: "1d6",
-  "Very Rare": "1d8",
-  Legendary: "1d10"
-};
-
-export const RARITY_AC_BONUS = {
-  Common: 0,
-  Uncommon: 1,
-  Rare: 1,
-  "Very Rare": 2,
-  Legendary: 3
-};
-
 export const ABILITY_OPTIONS = [
-  { key: "str", label: "STR", color: "#e74c3c", glyph: "M12,2L4,14H9V22H15V14H20Z", description: "Each inscribed Strength marking grants +1 to the chosen stat." },
-  { key: "dex", label: "DEX", color: "#2ecc71", glyph: "M15,2L7,12H12L9,22L17,11H13Z", description: "Each inscribed Dexterity marking grants +1 to the chosen stat." },
-  { key: "con", label: "CON", color: "#e67e22", glyph: "M4,22V6L8,2H16L20,6V22M8,22V14H16V22M8,14H16", description: "Each inscribed Constitution marking grants +1 to the chosen stat." },
-  { key: "int", label: "INT", color: "#3498db", glyph: "M2,12C6,5,18,5,22,12C18,19,6,19,2,12M10,12A2,2,0,1,1,10,12.01", description: "Each inscribed Intelligence marking grants +1 to the chosen stat." },
-  { key: "wis", label: "WIS", color: "#9b59b6", glyph: "M12,2V22M2,12H22M5.6,5.6L18.4,18.4M18.4,5.6L5.6,18.4", description: "Each inscribed Wisdom marking grants +1 to the chosen stat." },
-  { key: "cha", label: "CHA", color: "#f0a500", glyph: "M2,18L4,10L8,14L12,6L16,14L20,10L22,18H2", description: "Each inscribed Charisma marking grants +1 to the chosen stat." }
+  { key: "str", label: "STR", color: "#e74c3c", glyph: "M12,2L4,14H9V22H15V14H20Z", get description() { return rrI18n("ability.str.description"); } },
+  { key: "dex", label: "DEX", color: "#2ecc71", glyph: "M15,2L7,12H12L9,22L17,11H13Z", get description() { return rrI18n("ability.dex.description"); } },
+  { key: "con", label: "CON", color: "#e67e22", glyph: "M4,22V6L8,2H16L20,6V22M8,22V14H16V22M8,14H16", get description() { return rrI18n("ability.con.description"); } },
+  { key: "int", label: "INT", color: "#3498db", glyph: "M2,12C6,5,18,5,22,12C18,19,6,19,2,12M10,12A2,2,0,1,1,10,12.01", get description() { return rrI18n("ability.int.description"); } },
+  { key: "wis", label: "WIS", color: "#9b59b6", glyph: "M12,2V22M2,12H22M5.6,5.6L18.4,18.4M18.4,5.6L5.6,18.4", get description() { return rrI18n("ability.wis.description"); } },
+  { key: "cha", label: "CHA", color: "#f0a500", glyph: "M2,18L4,10L8,14L12,6L16,14L20,10L22,18H2", get description() { return rrI18n("ability.cha.description"); } }
 ];
 
 export const LEGACY_FEAT_GLYPH = "M12,2L15,9L22,9L16,14L18,21L12,17L6,21L8,14L2,9L9,9Z";

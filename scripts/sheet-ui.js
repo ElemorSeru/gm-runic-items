@@ -9,16 +9,17 @@ import {
   LEGACY_FEAT_GLYPH, LEGACY_SPELL_GLYPH,
   LEGACY_FEAT_COLOR, LEGACY_SPELL_COLOR
 } from "./rune-registry.js";
-import { getActiveCombo } from "./combo-registry.js";
+import { getActiveComboMerged, canForge } from "./rune-store.js";
+import { openRuneforge } from "./runeforge-app.js";
 import { getCompatiblePresets, savePreset, applyPreset, presetRarity } from "./preset-manager.js";
 import {
   getLegacyFeats, getLegacySpells,
   ensureLegacyCacheLoaded, isLegacyCacheLoaded
 } from "./legacy-cache.js";
-import { evaluateItem } from "./effect-manager.js";
+import { evaluateItem, clearItemEffects } from "./effect-manager.js";
 
 const MODULE_ID = "gm-runic-items";
-const TEMPLATE = `modules/${MODULE_ID}/templates/rune-panel.hbs`;
+export const TEMPLATE = `modules/${MODULE_ID}/templates/rune-panel.hbs`;
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 let _tipEl = null;
@@ -100,7 +101,7 @@ function truncateWords(html, maxWords = 38) {
 
   const words = text.split(" ");
   if (words.length <= maxWords) return text;
-  return words.slice(0, maxWords).join(" ") + "…";
+  return words.slice(0, maxWords).join(" ") + "...";
 }
 
 function formatDesc(description, item) {
@@ -116,7 +117,7 @@ function initComboSlot(panelEl, flags, animate = false) {
   if (!powerRow) return;
 
   const existing = powerRow.querySelector('.rune-slot-combo');
-  const combo = getActiveCombo([flags["power-0"], flags["power-1"], flags["power-2"]]);
+  const combo = getActiveComboMerged([flags["power-0"], flags["power-1"], flags["power-2"]]);
 
   if (!combo) {
     if (existing) dissolveComboSlot(existing);
@@ -140,9 +141,19 @@ function appendComboSlot(powerRow, combo, animate) {
   slot.dataset.tipDesc = combo.description;
   slot.style.setProperty("--rune-color", combo.color);
 
+  slot.appendChild(buildComboFlames(animate));
+
+  const wrapEl = document.createElement("div");
+  wrapEl.className = "rune-socket-wrap";
   const socket = document.createElement("div");
   socket.className = "rune-socket sock-filled";
-  slot.appendChild(socket);
+  wrapEl.appendChild(socket);
+  const sparkleSvg = document.createElementNS(SVG_NS, "svg");
+  sparkleSvg.classList.add("rune-sparkle");
+  wrapEl.appendChild(sparkleSvg);
+  slot.appendChild(wrapEl);
+  paintSocketSparkle(slot);
+  socket.appendChild(buildSocketTexture(combo.id, socketShapeFor(slot)));
 
   const label = document.createElement("span");
   label.className = "rune-slot-label";
@@ -180,11 +191,50 @@ function appendComboSlot(powerRow, combo, animate) {
 }
 
 function dissolveComboSlot(slotEl, onComplete = null) {
+  const flames = slotEl.querySelector(".combo-flames");
+  if (flames) flames.classList.add("flames-douse");
   slotEl.style.animation = "combo-dissolve 0.7s ease-in forwards";
   slotEl.addEventListener("animationend", () => {
     slotEl.remove();
     if (onComplete) onComplete();
   }, { once: true });
+}
+
+function buildComboFlames(animate) {
+  const wrap = document.createElement("div");
+  wrap.className = "combo-flames";
+  if (animate) wrap.style.animationDelay = "0.9s";
+
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.classList.add("combo-flames-svg");
+  svg.setAttribute("viewBox", "0 0 80 110");
+  svg.setAttribute("preserveAspectRatio", "none");
+
+  const uid = Math.random().toString(36).slice(2, 8);
+  const layers = [
+    { cls: "flame-outer", seed: 3, scale: 13,
+      d: "M40,6 C52,22 58,32 62,46 C67,60 66,78 60,92 C55,102 25,102 20,92 C14,78 13,60 18,46 C22,32 28,22 40,6 Z" },
+    { cls: "flame-mid", seed: 11, scale: 9,
+      d: "M40,20 C49,33 54,44 56,57 C58,71 57,85 52,95 C47,102 33,102 28,95 C23,85 22,71 24,57 C26,44 31,33 40,20 Z" },
+    { cls: "flame-inner", seed: 23, scale: 7,
+      d: "M40,36 C46,46 50,56 51,67 C52,79 50,89 46,96 C43,101 37,101 34,96 C30,89 28,79 29,67 C30,56 34,46 40,36 Z" }
+  ];
+
+  let markup = "";
+  for (const l of layers) {
+    const id = `comboflame-${uid}-${l.cls}`;
+    markup +=
+      `<filter id="${id}" x="-40%" y="-40%" width="180%" height="180%">` +
+      `<feTurbulence type="fractalNoise" baseFrequency="0.02 0.045" numOctaves="3" seed="${l.seed}" result="n">` +
+      `<animate attributeName="baseFrequency" dur="6s" values="0.02 0.045;0.028 0.06;0.017 0.052;0.02 0.045" repeatCount="indefinite"/>` +
+      `</feTurbulence>` +
+      `<feDisplacementMap in="SourceGraphic" in2="n" scale="${l.scale}" xChannelSelector="R" yChannelSelector="G"/>` +
+      `</filter>` +
+      `<g filter="url(#${id})"><path class="${l.cls}" d="${l.d}"/></g>`;
+  }
+  svg.innerHTML = markup;
+  wrap.appendChild(svg);
+  return wrap;
 }
 
 function updateComboSlot(panelEl, flags) {
@@ -205,6 +255,18 @@ function addPresetButtons(panelEl, item) {
       <i class="fas fa-folder-open"></i>
     </button>
   `;
+  if (canForge()) {
+    const forgeBtn = document.createElement("button");
+    forgeBtn.type = "button";
+    forgeBtn.className = "runic-preset-btn runic-btn-forge";
+    forgeBtn.title = game.i18n.localize(`${MODULE_ID}.runeforge.openTitle`);
+    forgeBtn.innerHTML = `<i class="fas fa-hammer"></i>`;
+    forgeBtn.addEventListener("click", e => {
+      e.stopPropagation();
+      openRuneforge({ category: getItemCategory(item) });
+    });
+    btns.appendChild(forgeBtn);
+  }
   header.appendChild(btns);
 
   const picker = document.createElement("div");
@@ -723,13 +785,23 @@ function renderSectionCrack(sectionEl, colors, message, seedKey, anchorEl = null
 }
 
 export function registerSheetHooks() {
-  // AppV1 sheets (dnd5e 3.x/4.x) fire renderItemSheet5e with jQuery html;
-  // AppV2 sheets (dnd5e 5.x / core v13+) fire render hooks with an HTMLElement
+  // exactly one fires depending on dnd5e version
   Hooks.on("renderItemSheet5e", onRenderItemSheet);
   Hooks.on("renderItemSheetV2", onRenderItemSheet);
+  Hooks.on("preUpdateItem", onPreUpdateItem);
   Hooks.on("updateItem", onUpdateItem);
+  Hooks.on("deleteItem", onDeleteItem);
   Hooks.on("renderActorSheet", onRenderActorSheet);
   Hooks.on("renderActorSheetV2", onRenderActorSheet);
+}
+
+function onPreUpdateItem(item, changes, options) {
+  if (options?.render === false) return;
+  const app = item.sheet;
+  if (!app?.rendered) return;
+  const root = app.element instanceof HTMLElement ? app.element : app.element?.[0];
+  const detailsTab = root?.querySelector('.tab[data-tab="details"]');
+  if (detailsTab) app._runicScrollRestore = detailsTab.scrollTop;
 }
 
 async function onRenderItemSheet(app, html, data) {
@@ -775,7 +847,7 @@ async function onRenderItemSheet(app, html, data) {
   }
 }
 
-function buildTemplateContext(flags, item) {
+export function buildTemplateContext(flags, item) {
   return {
     powerSlots: Array.from({ length: 3 }, (_, i) => ({ index: i, runeId: flags[`power-${i}`] ?? null })),
     empowermentSlots: Array.from({ length: 5 }, (_, i) => ({ index: i, stat: flags[`emp-${i}`] ?? null })),
@@ -785,10 +857,25 @@ function buildTemplateContext(flags, item) {
   };
 }
 
-function initAllSockets(panelEl, flags, runePool, item) {
+export function initAllSockets(panelEl, flags, runePool, item) {
   panelEl.querySelectorAll('.rune-slot[data-section="power"]').forEach(slotEl => {
     const rune = runePool.find(r => r.id === slotEl.dataset.runeId);
-    if (rune) fillSocket(slotEl, rune.glyph, rune.color, rune.name, rune.description, false, item);
+    if (rune) {
+      const masked = rune.cursed && !item.system?.identified && !game.user.isGM;
+      fillSocket(
+        slotEl, rune.glyph, rune.color,
+        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedName`) : rune.name,
+        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedDesc`) : rune.description,
+        false, item, null, { fill: rune.glyphMode === "silhouette", view: rune.glyphView }
+      );
+    } else if (slotEl.dataset.runeId) {
+      fillSocket(
+        slotEl, "M12,3A9,9,0,1,1,11.99,3M9,10A3,3,0,0,1,15,10C15,12,12,12,12,14M12,17V18", "#777",
+        game.i18n.localize(`${MODULE_ID}.runeforge.missingRune`),
+        game.i18n.localize(`${MODULE_ID}.runeforge.missingRuneDesc`),
+        false, item
+      );
+    }
   });
 
   initComboSlot(panelEl, flags, false);
@@ -847,14 +934,14 @@ function initAllSockets(panelEl, flags, runePool, item) {
 
     fillSocket(slotEl, null, LEGACY_SPELL_COLOR, name, _descCache.get(uuid) ?? game.i18n.format(`${MODULE_ID}.picker.spellInscribed`, { level: level ?? "?" }), false, item, img);
     if (!_descCache.has(uuid)) {
-      const doc  = await fromUuid(uuid).catch(() => null);
+      const doc = await fromUuid(uuid).catch(() => null);
       const desc = await _loadDesc(uuid, doc);
       slotEl.dataset.tipDesc = desc;
     }
   });
 }
 
-function bindPanelEvents(panelEl, item, runePool, flags) {
+export function bindPanelEvents(panelEl, item, runePool, flags) {
   addPresetButtons(panelEl, item);
 
   panelEl.addEventListener("click", async (event) => {
@@ -927,7 +1014,7 @@ async function applySelection(panelEl, item, section, value, runePool, flags) {
     slotEl = panelEl.querySelector(`.rune-slot[data-section="${section}"][data-index="${index}"]`);
   } else {
     flagKey = section;
-    slotEl  = panelEl.querySelector(`.rune-slot[data-section="${section}"]`);
+    slotEl = panelEl.querySelector(`.rune-slot[data-section="${section}"]`);
   }
 
   if (!flagKey || !slotEl) return;
@@ -940,7 +1027,7 @@ async function applySelection(panelEl, item, section, value, runePool, flags) {
     clearSocket(slotEl);
   } else if (section === "power") {
     const rune = runePool.find(r => r.id === value);
-    if (rune) fillSocket(slotEl, rune.glyph, rune.color, rune.name, rune.description, true, item);
+    if (rune) fillSocket(slotEl, rune.glyph, rune.color, rune.name, rune.description, true, item, null, { fill: rune.glyphMode === "silhouette", view: rune.glyphView });
   } else if (section === "empowerment") {
     const opt = ABILITY_OPTIONS.find(o => o.key === value);
     if (opt) {
@@ -1004,8 +1091,16 @@ function buildPickerContent(pickerEl, section, runePool, flags, activeSlotEl, it
 
     for (const rune of runePool) {
       if (takenIds.has(rune.id)) continue;
-      grid.appendChild(makePickerOption(rune.id, rune.name, rune.glyph, rune.color, "opt-sock-power", rune.id === currentId, item ? formatDesc(rune.description, item) : rune.description));
+      const masked = rune.cursed && !item?.system?.identified && !game.user.isGM;
+      grid.appendChild(makePickerOption(
+        rune.id,
+        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedName`) : rune.name,
+        rune.glyph, rune.color, "opt-sock-power", rune.id === currentId,
+        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedDesc`) : (item ? formatDesc(rune.description, item) : rune.description),
+        { fill: rune.glyphMode === "silhouette", view: rune.glyphView }
+      ));
     }
+
   } else if (section === "empowerment") {
     const currentStat = activeSlotEl?.dataset.runeId ?? "";
 
@@ -1119,7 +1214,7 @@ function buildLegacySearchPicker(pickerEl, isFeats, currentValue, item) {
 
     const allItems = isFeats ? getLegacyFeats() : getLegacySpells();
     const q = query.toLowerCase().trim();
-    const LIMIT    = 12;
+    const LIMIT = 12;
 
     let filtered;
     if (q.length === 0) {
@@ -1133,7 +1228,7 @@ function buildLegacySearchPicker(pickerEl, isFeats, currentValue, item) {
       filtered = allItems.filter(i => i.name.toLowerCase().includes(q)).slice(0, 20);
       if (filtered.length === 0) {
         hintEl.style.display = "";
-        hintEl.textContent   = game.i18n.format(`${MODULE_ID}.picker.noMatch`, { type: game.i18n.localize(`${MODULE_ID}.picker.${isFeats ? "typeFeats" : "typeSpells"}`), query });
+        hintEl.textContent = game.i18n.format(`${MODULE_ID}.picker.noMatch`, { type: game.i18n.localize(`${MODULE_ID}.picker.${isFeats ? "typeFeats" : "typeSpells"}`), query });
       } else {
         hintEl.style.display = "none";
       }
@@ -1203,7 +1298,7 @@ function buildLegacySearchPicker(pickerEl, isFeats, currentValue, item) {
   requestAnimationFrame(() => input.focus());
 }
 
-function makePickerOption(value, label, glyph, color, sockClass, selected, description) {
+function makePickerOption(value, label, glyph, color, sockClass, selected, description, glyphOpts = null) {
   const el = document.createElement("div");
   el.className = "rune-option" + (selected ? " opt-selected" : "");
   el.dataset.value = value;
@@ -1214,7 +1309,7 @@ function makePickerOption(value, label, glyph, color, sockClass, selected, descr
   if (color) sock.style.setProperty("--rune-color", color);
 
   if (glyph) {
-    sock.appendChild(buildGlyphSvg(glyph, color ?? "#888", 18));
+    sock.appendChild(buildGlyphSvg(glyph, color ?? "#888", 18, glyphOpts));
   } else {
     const dash = document.createElement("span");
     dash.style.cssText = "font-size:0.8em;color:rgba(255,255,255,0.25)";
@@ -1237,7 +1332,7 @@ function makePickerOption(value, label, glyph, color, sockClass, selected, descr
   return el;
 }
 
-function fillSocket(slotEl, glyph, color, name, description, animate, item, imgSrc = null) {
+function fillSocket(slotEl, glyph, color, name, description, animate, item, imgSrc = null, glyphOpts = null) {
   const socketEl = slotEl.querySelector(".rune-socket");
   if (!socketEl) return;
 
@@ -1246,13 +1341,15 @@ function fillSocket(slotEl, glyph, color, name, description, animate, item, imgS
   slotEl.style.setProperty("--rune-color", color);
   slotEl.classList.add("slot-filled");
   socketEl.classList.add("sock-filled");
+  paintSocketSparkle(slotEl);
+  socketEl.appendChild(buildSocketTexture(slotEl.dataset.runeId || name, socketShapeFor(slotEl)));
 
   slotEl.dataset.tipName = name;
   slotEl.dataset.tipTemplate = description ?? "";
   slotEl.dataset.tipDesc = item ? formatDesc(description, item) : (description ?? "");
 
   if (imgSrc) {
-      const img = document.createElement("img");
+    const img = document.createElement("img");
     img.src = imgSrc;
     img.alt = name;
     img.className = "legacy-item-img";
@@ -1265,7 +1362,7 @@ function fillSocket(slotEl, glyph, color, name, description, animate, item, imgS
     const size = slotEl.classList.contains("rune-slot-emp") ? 18
                : slotEl.classList.contains("rune-slot-legacy") ? 20
                : 26;
-    const svg = buildGlyphSvg(glyph, color, size);
+    const svg = buildGlyphSvg(glyph, color, size, glyphOpts);
     socketEl.appendChild(svg);
     if (animate) {
       const path = svg.querySelector(".rune-path");
@@ -1294,20 +1391,166 @@ function clearSocket(slotEl) {
   slotEl.classList.remove("slot-filled");
   delete slotEl.dataset.tipName;
   delete slotEl.dataset.tipDesc;
+  const sparkle = slotEl.querySelector(".rune-sparkle");
+  if (sparkle) sparkle.innerHTML = "";
 }
 
-function buildGlyphSvg(glyph, color, size) {
+const SOCKET_SHAPES = {
+  power: { w: 46, h: 54, notch: 0.22 },
+  emp: { w: 34, h: 46, notch: 0.26 },
+  legacy: { w: 48, h: 48, oct: true }
+};
+
+function socketHexPoints(w, h, notch) {
+  return [
+    [w * 0.5, 0], [w, h * notch], [w, h * (1 - notch)],
+    [w * 0.5, h], [0, h * (1 - notch)], [0, notch * h]
+  ];
+}
+
+function socketOctPoints(w, h) {
+  return [
+    [w * 0.29, 0], [w * 0.71, 0], [w, h * 0.29], [w, h * 0.71],
+    [w * 0.71, h], [w * 0.29, h], [0, h * 0.71], [0, h * 0.29]
+  ];
+}
+
+function socketShapeFor(slotEl) {
+  const key = slotEl.classList.contains("rune-slot-emp") ? "emp"
+    : slotEl.classList.contains("rune-slot-legacy") ? "legacy"
+    : "power";
+  const s = SOCKET_SHAPES[key];
+  const points = s.oct ? socketOctPoints(s.w, s.h) : socketHexPoints(s.w, s.h, s.notch);
+  return { w: s.w, h: s.h, points };
+}
+
+function gleamStarPath(rLong, rShort) {
+  const f = n => n.toFixed(1);
+  return `M0,${f(-rShort)} Q0,0 ${f(rLong)},0 Q0,0 0,${f(rShort)} Q0,0 ${f(-rLong)},0 Q0,0 0,${f(-rShort)} Z`;
+}
+
+function buildSparkleMarkup(shape) {
+  const PAD = 6;
+  const pts = shape.points.map(pt => [pt[0] + PAD, pt[1] + PAD]);
+  const ptsAttr = pts.map(pt => `${pt[0].toFixed(1)},${pt[1].toFixed(1)}`).join(" ");
+
+  const rimDur = (5.5 + Math.random() * 2).toFixed(2);
+  const rimDelay = (Math.random() * 3).toFixed(2);
+  let markup =
+    `<polygon class="rim-bleed-wide" points="${ptsAttr}" style="animation-duration:${rimDur}s;animation-delay:${rimDelay}s"/>` +
+    `<polygon class="rim-bleed-tight" points="${ptsAttr}" style="animation-duration:${rimDur}s;animation-delay:${rimDelay}s"/>` +
+    `<polygon class="rim-core" points="${ptsAttr}" style="animation-duration:${(rimDur * 0.85).toFixed(2)}s;animation-delay:${rimDelay}s"/>`;
+
+  const minDim = Math.min(shape.w, shape.h);
+  for (const pt of pts) {
+    const gleamCount = 1 + Math.floor(Math.random() * 2);
+    for (let s = 0; s < gleamCount; s++) {
+      const jx = pt[0] + (Math.random() - 0.5) * minDim * 0.12;
+      const jy = pt[1] + (Math.random() - 0.5) * minDim * 0.12;
+      const rot = (Math.random() - 0.5) * 48;
+      const rLong = minDim * (0.14 + Math.random() * 0.08);
+      const rShort = rLong * (0.32 + Math.random() * 0.13);
+      const dur = (6 + Math.random() * 5).toFixed(2);
+      const delay = (Math.random() * 6).toFixed(2);
+      markup +=
+        `<g transform="translate(${jx.toFixed(1)} ${jy.toFixed(1)}) rotate(${rot.toFixed(1)})">` +
+        `<g class="rune-gleam" style="animation-duration:${dur}s;animation-delay:${delay}s">` +
+        `<path class="gleam-halo" d="${gleamStarPath(rLong, rShort)}"/>` +
+        `<path class="gleam-core" d="${gleamStarPath(rLong * 0.55, rShort * 0.5)}"/>` +
+        `</g></g>`;
+    }
+  }
+
+  return { markup, viewBox: `0 0 ${shape.w + PAD * 2} ${shape.h + PAD * 2}` };
+}
+
+function paintSocketSparkle(slotEl) {
+  const sparkle = slotEl.querySelector(".rune-sparkle");
+  if (!sparkle) return;
+  const shape = socketShapeFor(slotEl);
+  const built = buildSparkleMarkup(shape);
+  sparkle.setAttribute("viewBox", built.viewBox);
+  sparkle.innerHTML = built.markup;
+}
+
+function runeTextureHash(key) {
+  let h = 5381;
+  const s = String(key ?? "");
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function buildSocketTexture(key, shape) {
+  const h = runeTextureHash(key);
+  const seed = (h % 9973) + 1;
+  const bf = (0.09 + (h % 9) * 0.009).toFixed(3);
+  const azimuth = 200 + (h % 11) * 12;
+  const id = `runetex-${h.toString(36)}`;
   const svg = document.createElementNS(SVG_NS, "svg");
-  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.classList.add("rune-socket-texture");
+  svg.setAttribute("viewBox", `0 0 ${shape.w} ${shape.h}`);
+  svg.innerHTML =
+    `<filter id="${id}" x="-10%" y="-10%" width="120%" height="120%">` +
+    `<feTurbulence type="turbulence" baseFrequency="${bf}" numOctaves="4" seed="${seed}" result="noise"/>` +
+    `<feDiffuseLighting in="noise" lighting-color="#fff" surfaceScale="1.8" result="relief">` +
+    `<feDistantLight azimuth="${azimuth}" elevation="62"/>` +
+    `</feDiffuseLighting>` +
+    `<feComposite in="relief" in2="SourceGraphic" operator="arithmetic" k1="1" k2="0" k3="0" k4="0"/>` +
+    `</filter>` +
+    `<rect width="${shape.w}" height="${shape.h}" filter="url(#${id})" style="fill: color-mix(in srgb, var(--rune-color, #888) 72%, #15161a)"/>` +
+    buildSocketFacets(shape);
+  return svg;
+}
+
+function buildSocketFacets(shape) {
+  const cx = shape.points.reduce((s, pt) => s + pt[0], 0) / shape.points.length;
+  const cy = shape.points.reduce((s, pt) => s + pt[1], 0) / shape.points.length;
+  const ringAt = k => shape.points.map(pt => [cx + (pt[0] - cx) * k, cy + (pt[1] - cy) * k]);
+  const fmt = pt => `${pt[0].toFixed(1)},${pt[1].toFixed(1)}`;
+  const steps = [1, 0.84, 0.68];
+  let m = "";
+  for (let r = 0; r < steps.length - 1; r++) {
+    const outer = ringAt(steps[r]);
+    const inner = ringAt(steps[r + 1]);
+    const depth = r === 0 ? 1 : 0.6;
+    for (let i = 0; i < outer.length; i++) {
+      const j = (i + 1) % outer.length;
+      const dx = outer[j][0] - outer[i][0], dy = outer[j][1] - outer[i][1];
+      const len = Math.hypot(dx, dy) || 1;
+      const light = (dy / len) * -0.5 + (-dx / len) * -0.86;
+      const fill = light >= 0
+        ? `rgba(255,255,255,${(0.05 + light * 0.24 * depth).toFixed(3)})`
+        : `rgba(0,0,0,${(0.06 - light * 0.3 * depth).toFixed(3)})`;
+      m += `<polygon points="${[outer[i], outer[j], inner[j], inner[i]].map(fmt).join(" ")}" fill="${fill}"/>`;
+    }
+  }
+  m += `<polygon points="${ringAt(steps[steps.length - 1]).map(fmt).join(" ")}" fill="rgba(255,255,255,0.06)"/>`;
+  return m;
+}
+
+function buildGlyphSvg(glyph, color, size, glyphOpts = null) {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  const view = glyphOpts?.view ?? "0 0 24 24";
+  svg.setAttribute("viewBox", view);
   svg.setAttribute("width", size);
   svg.setAttribute("height", size);
   svg.classList.add("rune-glyph");
 
   const path = document.createElementNS(SVG_NS, "path");
   path.setAttribute("d", glyph);
+  if (glyphOpts?.fill) {
+    path.setAttribute("fill", color);
+    path.setAttribute("stroke", "none");
+    path.setAttribute("fill-rule", "evenodd");
+    path.classList.add("rune-path");
+    svg.appendChild(path);
+    return svg;
+  }
+  const viewParts = String(view).trim().split(/[s,]+/).map(Number);
+  const strokeScale = Math.max(viewParts[2] || 24, viewParts[3] || 24) / 24;
   path.setAttribute("stroke", color);
   path.setAttribute("fill", "none");
-  path.setAttribute("stroke-width", "1.6");
+  path.setAttribute("stroke-width", String(1.6 * strokeScale));
   path.setAttribute("stroke-linecap", "round");
   path.setAttribute("stroke-linejoin", "round");
   path.classList.add("rune-path");
@@ -1361,11 +1604,17 @@ async function onUpdateItem(item, changes) {
   return withCache("updateItem", item.id, 150, () => evaluateItem(item));
 }
 
-async function onRenderActorSheet(sheet, html, data) {
+async function onDeleteItem(item) {
+  if (!item.flags?.[MODULE_ID]) return;
+  await clearItemEffects(item, item.actor);
+}
+
+export async function onRenderActorSheet(sheet, html, data) {
   const actor = sheet.actor;
   if (!actor) return;
-  return withCache("actorSheet", actor.id, 500, () => {
+  return withCache("actorSheet", actor.id, 500, async () => {
     const targets = actor.items.filter(i => i.flags?.[MODULE_ID] && getItemCategory(i));
-    return Promise.all(targets.map(i => evaluateItem(i)));
+    // sequential to manage combatting parallel checks
+    for (const i of targets) await evaluateItem(i);
   });
 }

@@ -1,4 +1,4 @@
-import { getItemCategory } from "./utils.js";
+import { getItemCategory, rarityFromCounts } from "./utils.js";
 
 const MODULE_ID = "gm-runic-items";
 const PRESETS_KEY = "presets";
@@ -52,10 +52,5 @@ export function presetRarity(preset) {
   const powerCount = preset.power.filter(Boolean).length;
   const secondaryCount = preset.empowerment.filter(Boolean).length
     + (preset.legacyFeat ? 1 : 0) + (preset.legacySpell ? 1 : 0);
-  const score = powerCount * 3 + secondaryCount;
-  if (score === 0) return "Common";
-  if (score <= 3) return "Uncommon";
-  if (score <= 7) return "Rare";
-  if (score <= 11) return "Very Rare";
-  return "Legendary";
+  return rarityFromCounts(powerCount, secondaryCount);
 }

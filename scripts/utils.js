@@ -1,9 +1,16 @@
 import { RUNE_REGISTRY } from "./rune-registry.js";
+import { getCustomRunesByCategory } from "./rune-store.js";
+
+const ARMOR_AMBIGUOUS_SUBTYPES = ["clothing", "rod", "trinket", "wondrous"];
 
 export function getItemCategory(item) {
   if (item.type === "equipment") {
     const sub = item.system?.type?.value ?? "";
-    if (sub === "natural" || sub === "vehicle") return null;
+    if (sub === "natural" || sub === "vehicle" || sub === "wand") return null;
+
+    // ambiguous subtypes need a real AC value
+    if (ARMOR_AMBIGUOUS_SUBTYPES.includes(sub) && !(Number(item.system?.armor?.value) > 0)) return null;
+
     return "armor";
   }
 
@@ -50,11 +57,33 @@ export function meetsRequirements(item) {
 
 export function getRunePool(item) {
   const category = getItemCategory(item);
-  return RUNE_REGISTRY[category] ?? [];
+  if (!category) return [];
+  const core = RUNE_REGISTRY[category] ?? [];
+  const customs = getCustomRunesByCategory(category).map(d => ({
+    id: d.id,
+    name: d.name,
+    color: d.color,
+    glyph: d.glyph,
+    glyphMode: d.glyphMode ?? "path",
+    glyphView: d.glyphView ?? null,
+    cursed: d.cursed === true,
+    description: d.description ?? "",
+    custom: true
+  }));
+  return [...core, ...customs];
 }
 
 export function getRuneById(id, category) {
   return (RUNE_REGISTRY[category] ?? []).find(r => r.id === id) ?? null;
+}
+
+export function rarityFromCounts(powerCount, secondaryCount) {
+  const score = (powerCount * 3) + secondaryCount;
+  if (score === 0) return "Common";
+  if (score <= 3) return "Uncommon";
+  if (score <= 7) return "Rare";
+  if (score <= 11) return "Very Rare";
+  return "Legendary";
 }
 
 export function computeRunicRarity(item) {
@@ -69,14 +98,7 @@ export function computeRunicRarity(item) {
     flags["legacy-spell"]
   ].filter(Boolean).length;
 
-  // power = 3pts each, secondary = 1pt each
-  const score = (powerCount * 3) + secondaryCount;
-
-  if (score === 0) return "Common";
-  if (score <= 3) return "Uncommon";
-  if (score <= 7) return "Rare";
-  if (score <= 11) return "Very Rare";
-  return "Legendary";
+  return rarityFromCounts(powerCount, secondaryCount);
 }
 
 export function getRarityDie(rarity) {
