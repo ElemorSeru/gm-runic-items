@@ -20,7 +20,18 @@
       "title": "Which target?",
       "intro": "{item} hit more than one target. Choose which one its runes affect.",
       "away": "{distance} {unit} away",
-      "declined": "No rune effects were applied from {item}."
+      "declined": "No rune effects were applied from {item}.",
+      "remove": "Remove",
+      "searchFeats": "Search feats...",
+      "searchSpells": "Search spells...",
+      "loading": "Loading compendium data...",
+      "showingFirst": "Showing first {limit} of {total} - type to filter",
+      "countAvailable": "{total} {type} available",
+      "noMatch": "No {type} match \"{query}\"",
+      "typeFeats": "feats",
+      "typeSpells": "spells",
+      "featInscribed": "Feat inscribed into this item.",
+      "spellInscribed": "Level {level} spell inscribed into this item."
     },
     "notify": {
       "legacyGranted": "Runic Legacy: \"{name}\" granted to {actor}.",
