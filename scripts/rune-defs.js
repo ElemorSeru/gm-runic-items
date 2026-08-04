@@ -1,4 +1,5 @@
 import { RUNE_REGISTRY } from "./rune-registry.js";
+import { dnd5eDisplayDistance } from "./utils.js";
 
 const MODULE_ID = "gm-runic-items";
 
@@ -27,10 +28,12 @@ export const SAVE_ABILITIES = ["str", "dex", "con", "int", "wis", "cha"];
 export const ON_SAVE = ["negate", "half", "full"];
 export const USE_LIMITS = ["round", "combat", "rest"];
 export const AURA_RADIUS = 15;
+export const WASTEBLIGHT_CONTAGION_DC = 13;
 
 export const STAT_KEYS = [
   "ac-bonus", "ac-penalty", "speed-penalty", "speed-half", "speed-zero",
-  "disadv-attack", "disadv-check", "temp-hp", "resist-all", "init-adv"
+  "disadv-attack", "disadv-check", "temp-hp", "resist-all", "init-adv",
+  "deny-bonus", "deny-reaction"
 ];
 
 export const DAMAGE_TYPES = [
@@ -40,6 +43,23 @@ export const DAMAGE_TYPES = [
 
 export const STATUS_KEYS = ["poisoned", "blinded", "deafened", "frightened", "prone", "restrained"];
 
+export const TELEPORT_DISTANCES = [10, 15, 30];
+
+// a blink defaults to whichever direction reads the most logical for who it's set
+const TELEPORT_DIR_BY_ROLE = {
+  target: "away", attacker: "away",
+  self: "toward", allies: "toward", enemies: "toward", area: "toward"
+};
+
+export function teleportDir(dir, role) {
+  if (dir === "away" || dir === "toward") return dir;
+  return TELEPORT_DIR_BY_ROLE[role] ?? "away";
+}
+
+export function teleportFeet(distance) {
+  return TELEPORT_DISTANCES.includes(distance) ? distance : 15;
+}
+
 export const ACTION_TYPES = {
   move: { cfg: { dir: ["away", "toward"] } },
   stat: { cfg: { stat: STAT_KEYS } },
@@ -48,7 +68,7 @@ export const ACTION_TYPES = {
   reminder: { cfg: { text: "string" } },
   cloud: { point: true, cfg: {} },
   light: { cfg: {} },
-  teleport: { cfg: {} },
+  teleport: { cfg: { dir: ["away", "toward"], distance: TELEPORT_DISTANCES } },
   brand: { cfg: {}, triggers: ["onHit", "onCrit"] },
   contagion: { cfg: { dc: "number", ability: SAVE_ABILITIES } },
   allyDash: { point: true, cfg: { radius: "number" }, triggers: ["onHit", "onCrit", "onKill"] },
@@ -89,6 +109,13 @@ const CORE_TRIGGERS = {
 };
 
 // mirror each core rune's locked behavior
+function coreTriggerFor(id) {
+  const t = CORE_TRIGGERS[id];
+  if (t) return t;
+  console.warn(`[${MODULE_ID}] no trigger mapped for core rune "${id}"; defaulting to onHit`);
+  return "onHit";
+}
+
 function coreTemplates() {
   const t = key => game.i18n.localize(`${MODULE_ID}.runeforge.tmpl.${key}`);
   return {
@@ -99,7 +126,7 @@ function coreTemplates() {
         { type: "stat", stat: "speed-half", target: "target", onSave: "negate" }
       ]
     },
-    mirageward: { actions: [{ type: "reminder", text: t("mirageward"), target: "target" }] },
+    mirageward: { actions: [{ type: "stat", stat: "deny-reaction", target: "target" }] },
     emberbrand: { actions: [{ type: "brand", target: "target" }] },
     sandgrasp: {
       save: { who: "target", ability: "str", dc: 15, critAutoFails: false },
@@ -115,7 +142,7 @@ function coreTemplates() {
     wasteblight: {
       actions: [
         { type: "status", status: "poisoned", target: "target" },
-        { type: "contagion", dc: 13, ability: "con", status: "poisoned", rounds: 10, target: "target" }
+        { type: "contagion", dc: WASTEBLIGHT_CONTAGION_DC, ability: "con", status: "poisoned", rounds: 10, target: "target" }
       ]
     },
     emberveil: {
@@ -130,7 +157,7 @@ function coreTemplates() {
     wardpulse: {
       uses: { per: "round" },
       save: { who: "attacker", ability: "con", dc: 14, critAutoFails: false },
-      actions: [{ type: "reminder", text: t("wardpulse"), target: "attacker", onSave: "negate" }]
+      actions: [{ type: "stat", stat: "deny-bonus", target: "attacker", onSave: "negate" }]
     },
     forgeshield: { actions: [{ type: "stat", stat: "ac-bonus", target: "allies", radius: 10, rounds: 2 }] },
     ashenmantle: {
@@ -161,7 +188,7 @@ export function getCoreDefs(category) {
         glyphMode: "path",
         cursed: false,
         description: r.description,
-        trigger: CORE_TRIGGERS[r.id] ?? "onHit",
+        trigger: coreTriggerFor(r.id),
         save: null,
         uses: null,
         actions: [{ type: "scripted", key: r.effectKey ?? r.id }],
@@ -247,7 +274,9 @@ export function validateRuneDef(def) {
         e("actionRounds", { index });
       }
       if (a.radius != null && !(Number.isInteger(a.radius) && a.radius >= 5 && a.radius <= 60)) {
-        e("actionRadius", { index });
+        const min = dnd5eDisplayDistance(5);
+        const max = dnd5eDisplayDistance(60);
+        e("actionRadius", { index, min: min.value, max: max.value, unit: min.unit });
       }
       if (a.type === "cloud" || a.type === "contagion") {
         if (a.dc != null && !(Number.isInteger(a.dc) && a.dc >= 5 && a.dc <= 30)) e("actionDc", { index });
@@ -269,6 +298,12 @@ export function validateRuneDef(def) {
       if (a.onSave != null && !ON_SAVE.includes(a.onSave)) e("actionOnSave", { index });
       if (a.onSave === "half" && !(a.type === "damage" && a.kind === "damage")) e("actionOnSaveHalf", { index });
       if (a.type === "move" && !["away", "toward"].includes(a.dir)) e("actionDir", { index });
+      if (a.type === "teleport") {
+        if (a.dir != null && !["away", "toward"].includes(a.dir)) e("actionDir", { index });
+        if (a.distance != null && !TELEPORT_DISTANCES.includes(a.distance)) {
+          e("actionDistance", { index, options: TELEPORT_DISTANCES.map(d => dnd5eDisplayDistance(d).value).join(", "), unit: dnd5eDisplayDistance(15).unit });
+        }
+      }
       if (a.type === "stat" && !STAT_KEYS.includes(a.stat)) e("actionStat", { index });
       if (a.type === "damage") {
         if (!["damage", "heal"].includes(a.kind)) e("actionKind", { index });

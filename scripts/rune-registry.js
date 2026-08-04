@@ -1,7 +1,16 @@
+import { dnd5eDisplayDistance } from "./utils.js";
+
 const MODULE_ID = "gm-runic-items";
 
-function rrI18n(key) {
-  return game.i18n.localize(`${MODULE_ID}.rune.${key}`);
+function rrI18n(key, data) {
+  const str = game.i18n.localize(`${MODULE_ID}.rune.${key}`);
+  if (!data) return str;
+
+  return str.replace(/\{(\w+)\}/g, (match, k) => (k in data ? data[k] : match));
+}
+
+function pipDistance() {
+  return dnd5eDisplayDistance(5);
 }
 
 export const RUNE_REGISTRY = {
@@ -11,7 +20,7 @@ export const RUNE_REGISTRY = {
       name: "Stonecleft",
       color: "#a04000",
       glyph: "M12,2L22,20L2,20ZM12,2L12,22M6,14L18,14",
-      get description() { return rrI18n("stonecleft.description"); },
+      get description() { const d = pipDistance(); return rrI18n("stonecleft.description", { pip: d.value, unit: d.unit }); },
       effectKey: "stonecleft"
     },
     {
@@ -35,7 +44,7 @@ export const RUNE_REGISTRY = {
       name: "Sandgrasp",
       color: "#6c3483",
       glyph: "M4,4H20V20H4ZM4,12H20M12,4V20",
-      get description() { return rrI18n("sandgrasp.description"); },
+      get description() { const d = pipDistance(); return rrI18n("sandgrasp.description", { pip: d.value, unit: d.unit }); },
       effectKey: "sandgrasp"
     },
     {
@@ -51,7 +60,11 @@ export const RUNE_REGISTRY = {
       name: "Forgebell",
       color: "#e67e22",
       glyph: "M4,20L4,10L8,4L12,10L16,4L20,10L20,20H4",
-      get description() { return rrI18n("forgebell.description"); },
+      get description() {
+        const move = pipDistance();
+        const radius = dnd5eDisplayDistance(30);
+        return rrI18n("forgebell.description", { pip: move.value, radius: radius.value, unit: move.unit });
+      },
       effectKey: "forgebell"
     }
   ],
@@ -69,7 +82,7 @@ export const RUNE_REGISTRY = {
       name: "Sandhold",
       color: "#85c1e9",
       glyph: "M4,8H20M4,12H20M4,16H20M8,4L4,8M16,4L20,8",
-      get description() { return rrI18n("sandhold.description"); },
+      get description() { const d = pipDistance(); return rrI18n("sandhold.description", { pip: d.value, unit: d.unit }); },
       effectKey: "sandhold"
     },
     {
@@ -85,7 +98,7 @@ export const RUNE_REGISTRY = {
       name: "Undertow",
       color: "#5d6d7e",
       glyph: "M12,2L12,22M6,8L12,2L18,8M6,16L12,22L18,16M6,12L18,12",
-      get description() { return rrI18n("undertow.description"); },
+      get description() { const d = pipDistance(); return rrI18n("undertow.description", { pip: d.value, unit: d.unit }); },
       effectKey: "undertow"
     },
     {
@@ -111,7 +124,7 @@ export const RUNE_REGISTRY = {
       name: "Emberveil",
       color: "#f1c40f",
       glyph: "M4,12L12,4L20,12L12,20ZM12,4L12,20M4,12L20,12",
-      get description() { return rrI18n("emberveil.description"); },
+      get description() { const d = pipDistance(); return rrI18n("emberveil.description", { pip: d.value, unit: d.unit }); },
       effectKey: "emberveil"
     },
     {
@@ -143,7 +156,7 @@ export const RUNE_REGISTRY = {
       name: "Forgeshield",
       color: "#1a5276",
       glyph: "M5,4L12,2L19,4L19,14L12,22L5,14ZM8,7L12,5L16,7L16,14L12,19L8,14Z",
-      get description() { return rrI18n("forgeshield.description"); },
+      get description() { const d = dnd5eDisplayDistance(10); return rrI18n("forgeshield.description", { radius: d.value, unit: d.unit }); },
       effectKey: "forgeshield"
     },
     {

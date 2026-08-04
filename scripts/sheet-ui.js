@@ -865,7 +865,7 @@ export function initAllSockets(panelEl, flags, runePool, item) {
       fillSocket(
         slotEl, rune.glyph, rune.color,
         masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedName`) : rune.name,
-        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedDesc`) : rune.description,
+        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedDesc`) : formatDesc(rune.description, item),
         false, item, null, { fill: rune.glyphMode === "silhouette", view: rune.glyphView }
       );
     } else if (slotEl.dataset.runeId) {
@@ -1027,7 +1027,7 @@ async function applySelection(panelEl, item, section, value, runePool, flags) {
     clearSocket(slotEl);
   } else if (section === "power") {
     const rune = runePool.find(r => r.id === value);
-    if (rune) fillSocket(slotEl, rune.glyph, rune.color, rune.name, rune.description, true, item, null, { fill: rune.glyphMode === "silhouette", view: rune.glyphView });
+    if (rune) fillSocket(slotEl, rune.glyph, rune.color, rune.name, formatDesc(rune.description, item), true, item, null, { fill: rune.glyphMode === "silhouette", view: rune.glyphView });
   } else if (section === "empowerment") {
     const opt = ABILITY_OPTIONS.find(o => o.key === value);
     if (opt) {

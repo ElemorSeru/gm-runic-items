@@ -1,4 +1,5 @@
 import { registerCombatHooks } from "./combat-effects.js";
+import { registerManualActionHooks } from "./manual-actions.js";
 import { registerSheetHooks } from "./sheet-ui.js";
 import { registerTidy5eIntegration } from "./tidy5e-compat.js";
 import { clearLegacyCache, refreshLegacyCache } from "./legacy-cache.js";
@@ -17,6 +18,7 @@ Hooks.once("init", () => {
   loadTemplatesCompat([`modules/${MODULE_ID}/templates/rune-panel.hbs`]);
 
   registerCombatHooks();
+  registerManualActionHooks();
   registerSheetHooks();
   registerTidy5eIntegration();
   registerUpdateChecker();
@@ -53,6 +55,16 @@ Hooks.once("init", () => {
     onChange: () => {}
   });
 
+  game.settings.register(MODULE_ID, "narrateUntargeted", {
+    name: `${MODULE_ID}.settings.narrateUntargeted.name`,
+    hint: `${MODULE_ID}.settings.narrateUntargeted.hint`,
+    scope: "world",
+    config: true,
+    type: Boolean,
+    default: true,
+    onChange: () => {}
+  });
+
   game.settings.register(MODULE_ID, "presets", {
     scope: "world",
     config: false,
@@ -74,11 +86,40 @@ Hooks.once("init", () => {
     default: []
   });
 
+  game.settings.register(MODULE_ID, "libraryFilter", {
+    scope: "client",
+    config: false,
+    type: String,
+    default: "all"
+  });
+
+  game.settings.register(MODULE_ID, "libraryCollapsed", {
+    scope: "client",
+    config: false,
+    type: Array,
+    default: []
+  });
+
   game.settings.register(MODULE_ID, "worldDataVersion", {
     scope: "world",
     config: false,
     type: Number,
     default: 0
+  });
+
+  // turn off manual settings for now until it's properly implemented
+  game.settings.register(MODULE_ID, "automationMode", {
+    name: `${MODULE_ID}.settings.automationMode.name`,
+    hint: `${MODULE_ID}.settings.automationMode.hint`,
+    scope: "world",
+    config: false,
+    type: String,
+    choices: {
+      auto: `${MODULE_ID}.settings.automationMode.auto`,
+      manual: `${MODULE_ID}.settings.automationMode.manual`
+    },
+    default: "auto",
+    onChange: () => {}
   });
 
   game.keybindings.register(MODULE_ID, "openRuneforge", {

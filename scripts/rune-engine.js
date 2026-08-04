@@ -1,8 +1,12 @@
-import { rollSave } from "./utils.js";
-import { AURA_RADIUS, ACTION_TYPES, validateRuneDef, formatValidationError } from "./rune-defs.js";
+import { rollSave, gridSquaresForFeet, feetPerGridSquare, feetToSceneDistance, sceneDistanceToFeet, dnd5eDisplayDistance, withinFeet, feetToActorUnits, actorUnitsToFeet, actorSpeedInSceneUnits } from "./utils.js";
+import { AURA_RADIUS, ACTION_TYPES, validateRuneDef, formatValidationError, teleportDir, teleportFeet } from "./rune-defs.js";
 import { getActiveComboMerged, getCustomCombos } from "./rune-store.js";
-import { measureDist, angleBetween, computeRayDestination, findReachableCells, findBestCellTowardTarget, findBestAdjacentCell } from "./movement.js";
+import { measureDist, angleBetween, computeBlinkDestination, findReachableCells, findBestCellTowardTarget, findBestCellAwayFrom, findBestAdjacentCell } from "./movement.js";
 import { dnd5eVersionAtLeast } from "./compat.js";
+import {
+  gateMove, gateDocUpdate, gateDamage, gateStatus, gateEffect, gateTemplate,
+  gateSaveCard, registerSaveResume, isManualMode
+} from "./manual-actions.js";
 
 const MODULE_ID = "gm-runic-items";
 
@@ -13,7 +17,15 @@ export function registerScripted(key, fn) {
 }
 
 function i18n(key, data) {
-  return data ? game.i18n.format(`${MODULE_ID}.engine.${key}`, data) : game.i18n.localize(`${MODULE_ID}.engine.${key}`);
+  if (!data) return game.i18n.localize(`${MODULE_ID}.engine.${key}`);
+  const out = { ...data };
+  for (const field of ["distance", "penalty", "remaining", "radius"]) {
+    if (typeof out[field] !== "number") continue;
+    const shown = dnd5eDisplayDistance(out[field]);
+    out[field] = shown.value;
+    out.unit = shown.unit;
+  }
+  return game.i18n.format(`${MODULE_ID}.engine.${key}`, out);
 }
 
 function safeFlagKey(id) {
@@ -65,12 +77,27 @@ function ownerToken(ctx) {
 function tokensNear(centerToken, filter, radius = AURA_RADIUS) {
   if (!centerToken || !canvas?.tokens) return [];
   return canvas.tokens.placeables.filter(t =>
-    t.actor && t.id !== centerToken.id && measureDist(centerToken, t) <= radius && filter(t)
+    t.actor && t.id !== centerToken.id && withinFeet(centerToken, t, radius) && filter(t)
   );
 }
 
-export function isFriendly(token) {
-  return token.actor?.type === "character" || token.document.disposition >= 0;
+export function tokenSide(token) {
+  const disp = token?.document?.disposition;
+  if (disp === CONST.TOKEN_DISPOSITIONS.FRIENDLY) return "party";
+  if (disp === CONST.TOKEN_DISPOSITIONS.HOSTILE) return "hostile";
+  return null;
+}
+
+// "ally" and "enemy" are both relative to the rune bearer
+export function areAllies(a, b) {
+  const side = tokenSide(a);
+  return side !== null && side === tokenSide(b);
+}
+
+export function areEnemies(a, b) {
+  const sa = tokenSide(a);
+  const sb = tokenSide(b);
+  return sa !== null && sb !== null && sa !== sb;
 }
 
 export function resolveRole(role, ctx, radius) {
@@ -79,8 +106,8 @@ export function resolveRole(role, ctx, radius) {
     case "target": return ctx.targetToken ? [ctx.targetToken] : [];
     case "attacker": return ctx.attackerToken ? [ctx.attackerToken] : [];
     case "self": return self ? [self] : [];
-    case "allies": return tokensNear(self, isFriendly, radius);
-    case "enemies": return tokensNear(self, t => !isFriendly(t), radius);
+    case "allies": return tokensNear(self, t => areAllies(self, t), radius);
+    case "enemies": return tokensNear(self, t => areEnemies(self, t), radius);
     case "area": return ctx.areaTokens ?? tokensNear(self, () => true, radius);
     default: return [];
   }
@@ -123,7 +150,7 @@ async function replaceEffect(targetActor, def, data) {
     e.flags?.[MODULE_ID]?.effectKey === data.flags[MODULE_ID].effectKey && e.origin === data.origin
   );
   if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
-  await targetActor.createEmbeddedDocuments("ActiveEffect", [data]);
+  await gateEffect(targetActor, data, { name: def.name, color: def.color });
 }
 
 const ALL_DAMAGE_TYPES = [
@@ -142,6 +169,9 @@ const STAT_BUILDERS = {
     // handle per-ability in core
     ...["str", "dex", "con", "int", "wis", "cha"].map(a => ({ key: `system.abilities.${a}.check.roll.mode`, mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "-1", priority: 20 }))
   ], descKey: "statDisadvCheck", data: {} }),
+  // action economy has no core dnd5e equivalent; midi-qol honors these flags
+  "deny-bonus": () => ({ changes: [{ key: "flags.midi-qol.actions.bonus", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }], descKey: "statDenyBonus", data: {} }),
+  "deny-reaction": () => ({ changes: [{ key: "flags.midi-qol.actions.reaction", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }], descKey: "statDenyReaction", data: {} }),
   // writes to whichever initiative flag is live
   "init-adv": () => dnd5eVersionAtLeast(5, 1)
     ? { changes: [{ key: "system.attributes.init.roll.mode", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "1", priority: 20 }], descKey: "statInitAdv", data: {} }
@@ -157,23 +187,30 @@ const STAT_BUILDERS = {
   }
 };
 
+// the narration composer needs the label without an actor to build it from
+export function statNarrationKey(stat) {
+  return STAT_BUILDERS[stat]?.({ system: {} })?.descKey ?? null;
+}
+
 const PRIMITIVES = {
   async move(action, token, ctx, env) {
     const anchor = ctx.attackerToken && token.id !== ctx.attackerToken.id ? ctx.attackerToken : ownerToken(ctx);
     const reference = token.id === anchor?.id ? (ctx.targetToken ?? ctx.attackerToken) : anchor;
     if (!reference || reference.id === token.id) return;
-    const squares = await rollDie(ctx.die);
-    const angle = action.dir === "toward"
-      ? angleBetween(token.center, reference.center)
-      : angleBetween(reference.center, token.center);
-    const dest = computeRayDestination(token, angle, squares);
-    if (dest.squares === 0) {
+    const rolled = await rollDie(ctx.die);
+    const feet = rolled * 5;
+    const reachable = findReachableCells(token, feetToSceneDistance(feet));
+    const cell = action.dir === "toward"
+      ? findBestCellTowardTarget(reachable, reference.center)
+      : findBestCellAwayFrom(reachable, reference.center, token.center);
+    const distance = cell ? Math.round(sceneDistanceToFeet(cell.cost) * 10) / 10 : 0;
+    if (!cell || distance <= 0) {
       env.lines.push(i18n("moveBlocked", { name: token.name }));
       return;
     }
-    await token.document.update({ x: dest.x, y: dest.y });
     const key = action.dir === "toward" ? "pulled" : "pushed";
-    env.lines.push(i18n(key, { name: token.name, distance: dest.squares * 5 }));
+    await gateMove(token, cell, { name: env.def.name, color: env.def.color, icon: env.item?.img, verb: key, distance });
+    env.lines.push(i18n(key, { name: token.name, distance }));
   },
 
   async stat(action, token, ctx, env) {
@@ -182,24 +219,25 @@ const PRIMITIVES = {
     if (action.stat === "temp-hp") {
       const total = await rollDie(ctx.die);
       const current = targetActor.system.attributes?.hp?.temp ?? 0;
-      if (total > current) await targetActor.update({ "system.attributes.hp.temp": total });
+      if (total > current) await gateDocUpdate(targetActor, { "system.attributes.hp.temp": total }, { name: env.def.name, color: env.def.color, icon: env.item?.img });
       env.lines.push(i18n("tempHp", { name: token.name, total: Math.max(total, current) }));
       return;
     }
     if (action.stat === "speed-penalty") {
       const total = await rollDie(ctx.die);
-      const penalty = total * 5;
-      const currentSpeed = targetActor.system.attributes?.movement?.walk ?? 30;
-      const actual = Math.max(0, Math.min(penalty, currentSpeed - 5));
+      const penalty = feetToActorUnits(targetActor, total * 5);
+      const floor = feetToActorUnits(targetActor, 5);
+      const currentSpeed = targetActor.system.attributes?.movement?.walk ?? feetToActorUnits(targetActor, 30);
+      const actual = Math.max(0, Math.min(penalty, currentSpeed - floor));
       await replaceEffect(targetActor, env.def, effectData(
         env.def, env.item,
         env.def.name,
-        i18n("statSpeedPenaltyDesc", { penalty: actual, rune: env.def.name }),
+        i18n("statSpeedPenaltyDesc", { penalty: actorUnitsToFeet(targetActor, actual), rune: env.def.name }),
         [{ key: "system.attributes.movement.walk", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: `-${actual}`, priority: 20 }],
         rounds,
         "stat.speed-penalty"
       ));
-      env.lines.push(i18n("statSpeedPenalty", { name: token.name, penalty: actual }));
+      env.lines.push(i18n("statSpeedPenalty", { name: token.name, penalty: actorUnitsToFeet(targetActor, actual) }));
       roundsSuffix(env, rounds, true);
       return;
     }
@@ -220,22 +258,23 @@ const PRIMITIVES = {
 
   async damage(action, token, ctx, env) {
     let total = await rollDie(ctx.die);
+    const dmgMeta = { name: env.def.name, color: env.def.color, icon: env.item?.img };
     if (action.kind === "heal") {
-      await token.actor.applyDamage(total, { multiplier: -1 });
+      await gateDamage(token, total, { multiplier: -1 }, dmgMeta);
       env.lines.push(i18n("healed", { name: token.name, total }));
       return;
     }
     if (env.halved) total = Math.floor(total / 2);
     if (total <= 0) return;
     // let resistances and immunities apply to the damage
-    await token.actor.applyDamage(action.dtype ? [{ value: total, type: action.dtype }] : [{ value: total }]);
+    await gateDamage(token, action.dtype ? [{ value: total, type: action.dtype }] : [{ value: total }], {}, dmgMeta);
     const typeCfg = CONFIG.DND5E?.damageTypes?.[action.dtype];
     const dtype = typeCfg ? game.i18n.localize(typeCfg.label ?? typeCfg) : action.dtype;
     env.lines.push(i18n(env.halved ? "damagedHalf" : "damaged", { name: token.name, total, type: dtype }));
   },
 
   async status(action, token, ctx, env) {
-    await token.actor.toggleStatusEffect(action.status, { active: true });
+    await gateStatus(token.actor, action.status, { name: env.def.name, color: env.def.color, icon: env.item?.img });
     const label = CONFIG.statusEffects?.find(s => s.id === action.status)?.name;
     env.lines.push(i18n("status", { name: token.name, status: label ? game.i18n.localize(label) : action.status }));
   },
@@ -285,12 +324,13 @@ const PRIMITIVES = {
     const target = ctx.targetToken;
     if (!owner || !target || !canvas?.tokens) return false;
     const radius = Number(action.radius) || 30;
-    const maxFeet = (await rollDie(ctx.die)) * 5;
+    const feet = (await rollDie(ctx.die)) * 5;
+    const maxSceneDistance = feetToSceneDistance(feet);
     const allies = canvas.tokens.placeables.filter(t =>
-      t.actor && t.actor.id !== ctx.actor?.id && isFriendly(t) && measureDist(owner, t) <= radius
+      t.actor && t !== owner && areAllies(owner, t) && withinFeet(owner, t, radius)
     );
     if (!allies.length) {
-      env.lines.push(i18n("allyDashNone", { distance: maxFeet }));
+      env.lines.push(i18n("allyDashNone", { distance: feet }));
       return;
     }
     let ally = allies[0];
@@ -298,7 +338,7 @@ const PRIMITIVES = {
       const options = allies.map(t => `<option value="${t.id}">${t.name}</option>`).join("");
       const picked = await foundry.applications.api.DialogV2.wait({
         window: { title: env.def.name },
-        content: `<p>${i18n("allyDashPick", { distance: maxFeet })}</p><select name="ally" style="width:100%;margin-top:4px">${options}</select>`,
+        content: `<p>${i18n("allyDashPick", { distance: feet })}</p><select name="ally" style="width:100%;margin-top:4px">${options}</select>`,
         buttons: [
           { action: "confirm", label: game.i18n.localize(`${MODULE_ID}.common.confirm`), default: true, callback: (event, button) => button.form.elements.ally.value },
           { action: "cancel", label: game.i18n.localize(`${MODULE_ID}.common.cancel`), callback: () => null }
@@ -308,12 +348,12 @@ const PRIMITIVES = {
       if (!picked) return false;
       ally = canvas.tokens.get(picked) ?? ally;
     }
-    const reachable = findReachableCells(ally, maxFeet);
+    const reachable = findReachableCells(ally, maxSceneDistance);
     const best = findBestCellTowardTarget(reachable, target.center);
-    const moved = Math.round(best.cost * 10) / 10;
-    if (moved > 0) await ally.document.update({ x: best.x, y: best.y });
-    env.lines.push(i18n(moved > 0 ? "allyDashMoved" : "allyDashBlocked", {
-      ally: ally.name, target: target.name, distance: moved > 0 ? moved : maxFeet
+    const movedFeet = Math.round(sceneDistanceToFeet(best.cost) * 10) / 10;
+    if (movedFeet > 0) await gateMove(ally, best, { name: env.def.name, color: env.def.color, icon: env.item?.img, verb: "moved", distance: movedFeet });
+    env.lines.push(i18n(movedFeet > 0 ? "allyDashMoved" : "allyDashBlocked", {
+      ally: ally.name, target: target.name, distance: movedFeet > 0 ? movedFeet : feet
     }));
   },
 
@@ -322,9 +362,10 @@ const PRIMITIVES = {
     const ally = ctx.targetToken;
     const attacker = ctx.attackerToken;
     if (!wearer || !ally || !attacker?.actor || !game.combat) return false;
-    const walk = ctx.actor?.system?.attributes?.movement?.walk ?? 30;
+    const walk = actorSpeedInSceneUnits(ctx.actor);
     if (measureDist(wearer, ally) > walk) return false;
-    const confirmed = await foundry.applications.api.DialogV2.confirm({
+    // manual mode consents via the deferred cards instead
+    const confirmed = isManualMode() ? true : await foundry.applications.api.DialogV2.confirm({
       window: { title: env.def.name },
       content: `<p>${i18n("guardianRushConfirm", { actor: wearer.name, ally: ally.name })}</p>`,
       rejectClose: false
@@ -336,7 +377,7 @@ const PRIMITIVES = {
       ui.notifications.warn(i18n("guardianRushNoPath", { name: wearer.name }));
       return false;
     }
-    if (cell.cost > 0) await wearer.document.update({ x: cell.x, y: cell.y });
+    if (cell.cost > 0) await gateMove(wearer, cell, { name: env.def.name, color: env.def.color, icon: env.item?.img, verb: "moved", distance: Math.round(sceneDistanceToFeet(cell.cost) * 10) / 10 });
     if (!isAdjacent) {
       env.lines.push(i18n("guardianRushPartial", { name: wearer.name, ally: ally.name }));
       return;
@@ -354,8 +395,8 @@ const PRIMITIVES = {
   async cloud(action, token, ctx, env) {
     const center = ctx.targetToken?.center ?? ownerToken(ctx)?.center;
     if (!center || !canvas?.scene) return;
-    const [templateDoc] = await canvas.scene.createEmbeddedDocuments("MeasuredTemplate", [{
-      t: "circle", user: game.user.id, x: center.x, y: center.y, distance: 7.5,
+    const templateData = {
+      t: "circle", user: game.user.id, x: center.x, y: center.y, distance: feetToSceneDistance(7.5),
       fillColor: env.def.color ?? "#8B8000",
       flags: {
         [MODULE_ID]: {
@@ -372,14 +413,14 @@ const PRIMITIVES = {
           lastRound: game.combat?.round ?? 0
         }
       }
-    }]);
-    if (action.immediate && templateDoc) await applyCloudTick(canvas.templates?.get(templateDoc.id));
+    };
+    await gateTemplate(canvas.scene, templateData, { name: env.def.name, color: env.def.color, icon: env.item?.img }, !!action.immediate);
     env.lines.push(i18n("cloud", { rune: env.def.name }));
   },
 
   async light(action, token, ctx, env) {
     const prev = foundry.utils.deepClone(token.document.light?.toObject?.() ?? {});
-    await token.document.update({ light: { bright: 20, dim: 40 } });
+    await gateDocUpdate(token.document, { light: { bright: feetToSceneDistance(20), dim: feetToSceneDistance(40) } }, { name: env.def.name, color: env.def.color, icon: env.item?.img });
     await replaceEffect(token.actor, env.def, effectData(
       env.def, env.item, env.def.name,
       i18n("lightDesc", { rune: env.def.name }),
@@ -387,17 +428,25 @@ const PRIMITIVES = {
       `light.${env.actionIndex}`,
       { lightPrev: { bright: prev.bright ?? 0, dim: prev.dim ?? 0 }, lightTokenId: token.id }
     ));
-    env.lines.push(i18n("light", { name: token.name }));
+    env.lines.push(i18n("light", { name: token.name, radius: 20 }));
   },
 
   async teleport(action, token, ctx, env) {
     const reference = ctx.targetToken?.id === token.id ? ownerToken(ctx) : (ctx.targetToken ?? ctx.attackerToken);
     if (!reference || reference.id === token.id) return;
-    const angle = angleBetween(token.center, reference.center);
-    const dest = computeRayDestination(token, angle, 3);
-    if (dest.squares === 0) return;
-    await token.document.update({ x: dest.x, y: dest.y });
-    env.lines.push(i18n("teleport", { name: token.name, distance: dest.squares * 5 }));
+    const dir = teleportDir(action.dir, action.target);
+    const angle = dir === "toward"
+      ? angleBetween(token.center, reference.center)
+      : angleBetween(reference.center, token.center);
+    const squares = gridSquaresForFeet(teleportFeet(action.distance));
+    const dest = computeBlinkDestination(token, angle, squares);
+    if (dest.squares === 0) {
+      env.lines.push(i18n("teleportBlocked", { name: token.name }));
+      return;
+    }
+    const teleportDistance = dest.squares * feetPerGridSquare();
+    await gateMove(token, dest, { name: env.def.name, color: env.def.color, icon: env.item?.img, verb: "teleport", distance: teleportDistance });
+    env.lines.push(i18n(dir === "toward" ? "teleportToward" : "teleportAway", { name: token.name, distance: teleportDistance }));
   }
 };
 
@@ -417,33 +466,7 @@ async function rollSaveGate(def, ctx) {
   return { rolled: true, saved: total >= def.save.dc, saverName: saver.name };
 }
 
-export async function executeRune(def, item, ctx, opts = {}) {
-  // bail cleanly on invalid stored data
-  const check = validateRuneDef(def);
-  if (!check.ok) {
-    console.warn(`[${MODULE_ID}] rune "${def?.name ?? def?.id ?? "?"}" failed validation and was skipped:`, check.errors.map(formatValidationError));
-    ui.notifications.warn(i18n("misconfigured", { name: def?.name ?? def?.id ?? "?" }));
-    return;
-  }
-
-  const actor = item?.actor ?? ctx.actor;
-  if (!actor) return;
-  if (!checkUseLimit(def, actor)) return;
-
-  const combo = ctx.combo ?? null;
-  const skipSave = opts.skipSave === true
-    || (combo && Array.isArray(combo.skipSaveFor) && combo.skipSaveFor.includes(def.id));
-
-  let saved = false;
-  let saveRolled = false;
-  let saverName = null;
-  if (def.save && !skipSave) {
-    const outcome = await rollSaveGate(def, ctx);
-    saved = outcome.saved;
-    saveRolled = outcome.rolled;
-    saverName = outcome.saverName ?? null;
-  }
-
+async function runActionsAndFinish(def, item, ctx, actor, saved, saveRolled, saverName, skipMarkUse = false) {
   const env = { def, item, halved: false, lines: [] };
   let fired = false;
   let actionIndex = -1;
@@ -455,6 +478,8 @@ export async function executeRune(def, item, ctx, opts = {}) {
       if (fn) {
         await fn(ctx);
         fired = true;
+      } else {
+        console.warn(`[${MODULE_ID}] no scripted handler registered for "${action.key}"; rune "${def.name}" did nothing`);
       }
       continue;
     }
@@ -483,7 +508,52 @@ export async function executeRune(def, item, ctx, opts = {}) {
     });
   }
 
-  if (fired || env.lines.length) await markUse(def, actor);
+  if (!skipMarkUse && (fired || env.lines.length)) await markUse(def, actor);
+}
+
+export async function resumeAfterSave(def, ctx, saved, saverName, opts) {
+  const actor = ctx.item?.actor ?? ctx.actor;
+  if (!actor) return;
+  await runActionsAndFinish(def, ctx.item, ctx, actor, saved, true, saverName, true);
+}
+
+registerSaveResume(resumeAfterSave);
+
+export async function executeRune(def, item, ctx, opts = {}) {
+  // bail cleanly on invalid stored data
+  const check = validateRuneDef(def);
+  if (!check.ok) {
+    console.warn(`[${MODULE_ID}] rune "${def?.name ?? def?.id ?? "?"}" failed validation and was skipped:`, check.errors.map(formatValidationError));
+    ui.notifications.warn(i18n("misconfigured", { name: def?.name ?? def?.id ?? "?" }));
+    return;
+  }
+
+  const actor = item?.actor ?? ctx.actor;
+  if (!actor) return;
+  if (!checkUseLimit(def, actor)) return;
+
+  const combo = ctx.combo ?? null;
+  const skipSave = opts.skipSave === true
+    || (combo && Array.isArray(combo.skipSaveFor) && combo.skipSaveFor.includes(def.id));
+
+  // manual mode defers every action behind a save card
+  if (def.save && !skipSave && isManualMode()) {
+    await markUse(def, actor);
+    await gateSaveCard(def, item, ctx, { name: def.name, color: def.color, icon: item?.img }, opts);
+    return;
+  }
+
+  let saved = false;
+  let saveRolled = false;
+  let saverName = null;
+  if (def.save && !skipSave) {
+    const outcome = await rollSaveGate(def, ctx);
+    saved = outcome.saved;
+    saveRolled = outcome.rolled;
+    saverName = outcome.saverName ?? null;
+  }
+
+  await runActionsAndFinish(def, item, ctx, actor, saved, saveRolled, saverName);
 }
 
 export function triggerMatches(defTrigger, ctx) {
@@ -518,9 +588,12 @@ export async function dispatchDefs(defs, item, ctx) {
 export async function applyCloudTick(template) {
   if (!template) return;
   const flags = template.document.flags?.[MODULE_ID] ?? {};
+  const ownerTok = flags.ownerActorId
+    ? canvas.tokens.placeables.find(t => t.actor?.id === flags.ownerActorId) : null;
+  const hostileToOwner = t => (ownerTok ? areEnemies(ownerTok, t) : tokenSide(t) === "hostile");
   const affected = canvas.tokens.placeables.filter(t =>
     t.actor && t.actor.id !== flags.ownerActorId &&
-    (flags.affects !== "enemies" || !isFriendly(t)) &&
+    (flags.affects !== "enemies" || hostileToOwner(t)) &&
     measureDist(template.center, t.center) <= template.document.distance
   );
   for (const token of affected) {
@@ -528,8 +601,9 @@ export async function applyCloudTick(template) {
       i18n("saveFlavor", { rune: flags.runeName ?? "?", dc: flags.dc ?? 13 }));
     if (total < (flags.dc ?? 13)) {
       const dmg = await rollDie(flags.damageDie ?? "1d4");
-      await token.actor.applyDamage([{ value: dmg }]);
-      if (flags.status) await token.actor.toggleStatusEffect(flags.status, { active: true });
+      const tickMeta = { name: flags.runeName ?? "?" };
+      await gateDamage(token, [{ value: dmg }], {}, tickMeta);
+      if (flags.status) await gateStatus(token.actor, flags.status, tickMeta);
       ChatMessage.create({
         speaker: { actor: token.actor },
         content: i18n("cloudTick", { name: token.name, total: dmg, rune: flags.runeName ?? "?" })

@@ -1,14 +1,16 @@
 import {
   TRIGGER_DEFS, SAVE_WHO, SAVE_ABILITIES, STAT_KEYS, DAMAGE_TYPES, STATUS_KEYS,
   GLYPH_CHOICES, ACTION_TYPES, CLOUD_AFFECTS, CONTAGION_AFFECTS, getCoreDefs,
-  validateRuneDef, validateComboDef, formatValidationError
+  validateRuneDef, validateComboDef, formatValidationError,
+  TELEPORT_DISTANCES, teleportDir, teleportFeet
 } from "./rune-defs.js";
 import {
-  canForge, getCustomRunes, getRuneDef, saveCustomRune, deleteCustomRune,
+  canForge, getCustomRunes, getCustomRunesByCategory, getRuneDef, saveCustomRune, deleteCustomRune,
   getCustomCombos, saveCustomCombo, deleteCustomCombo,
   exportRunesJson, importRunesJson
 } from "./rune-store.js";
 import { resolveFilePicker } from "./compat.js";
+import { dnd5eDisplayDistance } from "./utils.js";
 
 const MODULE_ID = "gm-runic-items";
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -17,12 +19,15 @@ const ABILITY_COLORS = { str: "#e74c3c", dex: "#2ecc71", con: "#e67e22", int: "#
 const STAT_OPT_KEYS = {
   "ac-bonus": "acBonus", "ac-penalty": "acPenalty", "speed-penalty": "speedPenalty",
   "speed-half": "speedHalf", "speed-zero": "speedZero", "disadv-attack": "disadvAttack", "disadv-check": "disadvCheck",
-  "temp-hp": "tempHp", "resist-all": "resistAll", "init-adv": "initAdv"
+  "temp-hp": "tempHp", "resist-all": "resistAll", "init-adv": "initAdv",
+  "deny-bonus": "denyBonus", "deny-reaction": "denyReaction"
 };
 const ACTION_ORDER = ["move", "stat", "damage", "status", "reminder", "brand", "contagion", "cloud", "allyDash", "guardianRush", "light", "teleport"];
 
 function rf(key, data) {
-  return data ? game.i18n.format(`${MODULE_ID}.runeforge.${key}`, data) : game.i18n.localize(`${MODULE_ID}.runeforge.${key}`);
+  const str = game.i18n.localize(`${MODULE_ID}.runeforge.${key}`);
+  if (!data) return str;
+  return str.replace(/\{(\w+)\}/g, (match, k) => (k in data ? data[k] : match));
 }
 
 export function buildForgeGlyphSvg(glyph, color, size, opts = {}) {
@@ -136,16 +141,29 @@ export function stateToDef(st, description) {
 
 function whoPhrase(role, category, radius = 15) {
   if (role === "self") return rf(category === "armor" ? "phrase.who.selfArmor" : "phrase.who.self");
-  if (role === "allies" || role === "enemies" || role === "area") return rf(`phrase.who.${role}`, { radius });
+  if (role === "allies" || role === "enemies" || role === "area") {
+    const d = dnd5eDisplayDistance(radius);
+    return rf(`phrase.who.${role}`, { radius: d.value, unit: d.unit });
+  }
   return rf(`phrase.who.${role}`);
 }
 
-const DURATION_STATS = new Set(["ac-bonus", "ac-penalty", "speed-penalty", "speed-half", "speed-zero", "disadv-attack", "disadv-check", "resist-all"]);
+const DURATION_STATS = new Set(["ac-bonus", "ac-penalty", "speed-penalty", "speed-half", "speed-zero", "disadv-attack", "disadv-check", "resist-all", "deny-bonus", "deny-reaction"]);
 
 function actionPhrase(a, category) {
   let base = "";
-  if (a.type === "move") base = rf(`phrase.action.move.${a.cfg.dir ?? "away"}`);
-  else if (a.type === "stat") base = rf(`phrase.action.stat.${STAT_OPT_KEYS[a.cfg.stat] ?? "acBonus"}`);
+  if (a.type === "move") {
+    const d = dnd5eDisplayDistance(5);
+    base = rf(`phrase.action.move.${a.cfg.dir ?? "away"}`, { pip: d.value, unit: d.unit });
+  }
+  else if (a.type === "stat") {
+    const statKey = STAT_OPT_KEYS[a.cfg.stat];
+    if (!statKey) console.warn(`[gm-runic-items] no label mapped for stat "${a.cfg.stat}"`);
+    if (statKey === "speedPenalty") {
+      const d = dnd5eDisplayDistance(5);
+      base = rf("phrase.action.stat.speedPenalty", { pip: d.value, unit: d.unit });
+    } else base = rf(`phrase.action.stat.${statKey}`);
+  }
   else if (a.type === "damage") {
     if (a.cfg.kind === "heal") return rf("phrase.action.heal");
     const cfg = CONFIG.DND5E?.damageTypes?.[a.cfg.dtype];
@@ -159,8 +177,11 @@ function actionPhrase(a, category) {
   else if (a.type === "reminder") return a.cfg.text ?? "";
   else if (a.type === "brand") base = rf("phrase.action.brand");
   else if (a.type === "contagion") base = rf("phrase.action.contagion", { dc: a.cfg.dc ?? 13, ability: String(a.cfg.ability ?? "con").toUpperCase() });
-  else if (a.type === "light") base = rf("phrase.action.light");
-  else if (a.type === "teleport") base = rf("phrase.action.teleport");
+  else if (a.type === "light") { const d = dnd5eDisplayDistance(20); base = rf("phrase.action.light", { radius: d.value, unit: d.unit }); }
+  else if (a.type === "teleport") {
+    const d = dnd5eDisplayDistance(teleportFeet(a.cfg.distance));
+    base = rf(`phrase.action.teleport.${teleportDir(a.cfg.dir, a.target)}`, { radius: d.value, unit: d.unit });
+  }
   const r = a.cfg.rounds ?? 1;
   const hasDuration = (a.type === "stat" && DURATION_STATS.has(a.cfg.stat)) || a.type === "contagion";
   if (r === "die") base += rf("phrase.forRoundsDie");
@@ -172,13 +193,23 @@ function actionPhrase(a, category) {
 export function buildDescription(st) {
   const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
   const join = arr => arr.length === 1 ? arr[0] : arr.slice(0, -1).join(", ") + " " + rf("phrase.and") + " " + arr[arr.length - 1];
-  const lead = rf(`phrase.trigger.${st.trigger}`);
+  let lead;
+  if (st.trigger === "proximity") {
+    const d = dnd5eDisplayDistance(10);
+    lead = rf("phrase.trigger.proximity", { radius: d.value, unit: d.unit });
+  } else lead = rf(`phrase.trigger.${st.trigger}`);
   const sentences = [];
   const standalone = [];
 
   const groups = [];
   for (const a of st.actions) {
-    if (ACTION_TYPES[a.type]?.point) { standalone.push(rf(`phrase.action.${a.type}`)); continue; }
+    if (ACTION_TYPES[a.type]?.point) {
+      let pointData;
+      if (a.type === "cloud") { const d = dnd5eDisplayDistance(7.5); pointData = { radius: d.value, unit: d.unit }; }
+      else if (a.type === "allyDash") { const d = dnd5eDisplayDistance(5); pointData = { pip: d.value, unit: d.unit }; }
+      standalone.push(rf(`phrase.action.${a.type}`, pointData));
+      continue;
+    }
     const radius = a.cfg.radius ?? 15;
     const key = `${a.target}|${radius}|${st.save.on ? a.onSave : "none"}`;
     let g = groups.find(x => x.key === key);
@@ -318,17 +349,70 @@ export class RuneforgeApp extends AppV2 {
     const spacer = document.createElement("span");
     spacer.className = "rf-spacer";
     bar.appendChild(spacer);
+    const mkIconBtn = (icon, tip, fn) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "rf-btn ghost rf-icon-btn";
+      b.dataset.tooltip = tip;
+      b.setAttribute("aria-label", tip);
+      const i = document.createElement("i");
+      i.className = `fas ${icon}`;
+      b.appendChild(i);
+      b.addEventListener("click", fn);
+      return b;
+    };
+    bar.appendChild(mkIconBtn("fa-angles-up", rf("lib.collapseAll"), () => this._toggleAllSections(true)));
+    bar.appendChild(mkIconBtn("fa-angles-down", rf("lib.expandAll"), () => this._toggleAllSections(false)));
     bar.appendChild(mkBtn(rf("lib.import"), "ghost", () => this._importDialog()));
     bar.appendChild(mkBtn(rf("lib.export"), "ghost", () => this._exportAll()));
     body.appendChild(bar);
 
-    const addSection = (labelKey, cls, defs, locked) => {
+    const filter = this._libraryFilter();
+    const subtabs = document.createElement("div");
+    subtabs.className = "rf-subtabs";
+    for (const [key, labelKey] of [["all", "lib.filterAll"], ["mine", "lib.filterCustom"], ["core", "lib.filterCore"]]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = `rf-subtab${filter === key ? " active" : ""}`;
+      b.textContent = rf(labelKey);
+      b.addEventListener("click", () => {
+        if (this._libraryFilter() === key) return;
+        game.settings.set(MODULE_ID, "libraryFilter", key);
+        this._showView("library");
+      });
+      subtabs.appendChild(b);
+    }
+    body.appendChild(subtabs);
+
+    const collapsed = this._collapsedSections();
+
+    const addSection = (key, labelKey, cls, defs, locked) => {
+      const shut = collapsed.has(key);
+
       const head = document.createElement("div");
-      head.className = `rf-cat-head ${cls}`;
-      head.textContent = rf(labelKey);
-      body.appendChild(head);
+      head.className = `rf-cat-head ${cls}${shut ? " is-collapsed" : ""}`;
+      head.dataset.rfSection = key;
+      head.setAttribute("role", "button");
+      head.setAttribute("aria-expanded", String(!shut));
+      head.tabIndex = 0;
+
+      const caret = document.createElement("i");
+      caret.className = "fas fa-chevron-down rf-cat-caret";
+      head.appendChild(caret);
+
+      const label = document.createElement("span");
+      label.className = "rf-cat-label";
+      label.textContent = rf(labelKey);
+      head.appendChild(label);
+
+      const count = document.createElement("span");
+      count.className = "rf-cat-count";
+      count.textContent = String(defs.length);
+      head.appendChild(count);
+
       const grid = document.createElement("div");
-      grid.className = "rf-card-grid";
+      grid.className = `rf-card-grid${shut ? " is-collapsed" : ""}`;
+      grid.dataset.rfSection = key;
       if (!defs.length) {
         const empty = document.createElement("div");
         empty.className = "rf-empty";
@@ -336,31 +420,95 @@ export class RuneforgeApp extends AppV2 {
         grid.appendChild(empty);
       }
       for (const def of defs) grid.appendChild(this._runeCard(def, locked));
+
+      const toggle = () => this._toggleSection(key, head, grid);
+      caret.addEventListener("click", e => { e.stopPropagation(); toggle(); });
+      head.addEventListener("dblclick", e => {
+        e.preventDefault();
+        toggle();
+      });
+      head.addEventListener("keydown", e => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        toggle();
+      });
+
+      body.appendChild(head);
       body.appendChild(grid);
     };
 
-    addSection("lib.custom", "rf-cat-custom", getCustomRunes(), false);
-    addSection("lib.coreMelee", "rf-cat-melee", getCoreDefs("melee"), true);
-    addSection("lib.coreRanged", "rf-cat-ranged", getCoreDefs("ranged"), true);
-    addSection("lib.coreArmor", "rf-cat-armor", getCoreDefs("armor"), true);
+    if (filter !== "core") {
+      addSection("mine-melee", "lib.customMelee", "rf-cat-melee rf-cat-mine", getCustomRunesByCategory("melee"), false);
+      addSection("mine-ranged", "lib.customRanged", "rf-cat-ranged rf-cat-mine", getCustomRunesByCategory("ranged"), false);
+      addSection("mine-armor", "lib.customArmor", "rf-cat-armor rf-cat-mine", getCustomRunesByCategory("armor"), false);
+    }
+    if (filter !== "mine") {
+      addSection("core-melee", "lib.coreMelee", "rf-cat-melee", getCoreDefs("melee"), true);
+      addSection("core-ranged", "lib.coreRanged", "rf-cat-ranged", getCoreDefs("ranged"), true);
+      addSection("core-armor", "lib.coreArmor", "rf-cat-armor", getCoreDefs("armor"), true);
+    }
+  }
+
+  _libraryFilter() {
+    const v = game.settings.get(MODULE_ID, "libraryFilter");
+    return ["all", "mine", "core"].includes(v) ? v : "all";
+  }
+
+  _collapsedSections() {
+    const stored = game.settings.get(MODULE_ID, "libraryCollapsed");
+    return new Set(Array.isArray(stored) ? stored : []);
+  }
+
+  _applySectionState(head, grid, shut) {
+    head.classList.toggle("is-collapsed", shut);
+    grid.classList.toggle("is-collapsed", shut);
+    head.setAttribute("aria-expanded", String(!shut));
+  }
+
+  _toggleSection(key, head, grid) {
+    const collapsed = this._collapsedSections();
+    const shut = !collapsed.has(key);
+    if (shut) collapsed.add(key);
+    else collapsed.delete(key);
+    this._applySectionState(head, grid, shut);
+    game.settings.set(MODULE_ID, "libraryCollapsed", Array.from(collapsed));
+  }
+
+  _toggleAllSections(shut) {
+    const collapsed = this._collapsedSections();
+    for (const head of this._body.querySelectorAll(".rf-cat-head[data-rf-section]")) {
+      const key = head.dataset.rfSection;
+      const grid = this._body.querySelector(`.rf-card-grid[data-rf-section="${key}"]`);
+      if (!grid) continue;
+      this._applySectionState(head, grid, shut);
+      if (shut) collapsed.add(key);
+      else collapsed.delete(key);
+    }
+    game.settings.set(MODULE_ID, "libraryCollapsed", Array.from(collapsed));
   }
 
   _runeCard(def, locked) {
     const card = document.createElement("div");
-    card.className = "rf-card";
+    card.className = `rf-card ${locked ? "core" : "mine"}`;
     card.style.setProperty("--rune-color", def.color);
+
+    const visual = document.createElement("div");
+    visual.className = "rf-card-visual";
     const sock = document.createElement("div");
     sock.className = "rf-card-sock";
     sock.appendChild(buildForgeGlyphSvg(def.glyph, def.color, 24, { fill: def.glyphMode === "silhouette", view: def.glyphView }));
-    card.appendChild(sock);
-    const name = document.createElement("div");
-    name.className = "rf-card-name";
-    name.textContent = def.name;
-    card.appendChild(name);
+    visual.appendChild(sock);
+    card.appendChild(visual);
+
+    const fold = document.createElement("div");
+    fold.className = "rf-card-fold";
+    card.appendChild(fold);
+
     const badge = document.createElement("span");
     badge.className = `rf-card-badge ${locked ? "core" : "mine"}`;
     badge.textContent = rf(locked ? "lib.core" : "lib.customBadge");
     card.appendChild(badge);
+
     if (!locked) {
       const del = document.createElement("span");
       del.className = "rf-card-del";
@@ -380,6 +528,15 @@ export class RuneforgeApp extends AppV2 {
       });
       card.appendChild(del);
     }
+
+    const strip = document.createElement("div");
+    strip.className = "rf-card-strip";
+    const name = document.createElement("div");
+    name.className = "rf-card-name";
+    name.textContent = def.name;
+    strip.appendChild(name);
+    card.appendChild(strip);
+
     card.addEventListener("click", () => this._openInEditor(def, locked));
     return card;
   }
@@ -456,7 +613,7 @@ export class RuneforgeApp extends AppV2 {
     body.appendChild(grid);
 
     const form = document.createElement("div");
-    form.className = "rf-ed-form" + (st.locked ? " locked" : "");
+    form.className = "rf-ed-form rf-steps" + (st.locked ? " locked" : "");
     grid.appendChild(form);
 
     form.appendChild(this._sectionIdentity());
@@ -721,7 +878,10 @@ export class RuneforgeApp extends AppV2 {
       card.appendChild(name);
       const desc = document.createElement("div");
       desc.className = "rf-trig-desc";
-      desc.textContent = rf(`trigger.${id}.desc`);
+      let triggerDescData;
+      if (id === "turnStart" || id === "turnEnd") { const d = dnd5eDisplayDistance(15); triggerDescData = { radius: d.value, unit: d.unit }; }
+      else if (id === "proximity") { const d = dnd5eDisplayDistance(10); triggerDescData = { radius: d.value, unit: d.unit }; }
+      desc.textContent = rf(`trigger.${id}.desc`, triggerDescData);
       card.appendChild(desc);
       card.addEventListener("click", () => {
         st.trigger = id;
@@ -877,7 +1037,8 @@ export class RuneforgeApp extends AppV2 {
           damage: { kind: "damage", dtype: "fire" }, status: { status: "poisoned" },
           reminder: { text: "" }, brand: {}, contagion: { dc: 13, ability: "con", status: "poisoned" },
           cloud: { dc: 13, ability: "con", affects: "all", immediate: true },
-          allyDash: { radius: 30 }, guardianRush: {}, light: {}, teleport: {}
+          allyDash: { radius: 30 }, guardianRush: {}, light: {},
+          teleport: { dir: teleportDir(null, meta?.point ? "point" : roles[0]), distance: 15 }
         };
         st.actions.push({ type, target: meta?.point ? "point" : roles[0], onSave: "negate", cfg: defaults[type] });
         this._showView("editor");
@@ -959,7 +1120,7 @@ export class RuneforgeApp extends AppV2 {
         rLabel.textContent = rf("act.radius");
         cfg.appendChild(rLabel);
         cfg.appendChild(this._pills(
-          [10, 15, 30].map(r => [r, rf("act.feet", { ft: r })]),
+          [10, 15, 30].map(r => { const d = dnd5eDisplayDistance(r); return [r, rf("act.feet", { value: d.value, unit: d.unit })]; }),
           a.cfg.radius ?? 15,
           value => { a.cfg.radius = value; this._showView("editor"); }
         ));
@@ -983,27 +1144,53 @@ export class RuneforgeApp extends AppV2 {
     return row;
   }
 
+  _dimLabel(parent, text) {
+    const el = document.createElement("span");
+    el.className = "rf-dim-label";
+    el.textContent = text;
+    parent.appendChild(el);
+    return el;
+  }
+
   _actionConfig(a) {
     const wrap = document.createElement("div");
     wrap.className = "rf-action-opts";
     const rerender = () => this._showView("editor");
 
     if (a.type === "move") {
+      this._dimLabel(wrap, rf("act.direction"));
       wrap.appendChild(this._pills(
         [["away", rf("opt.move.away")], ["toward", rf("opt.move.toward")]],
         a.cfg.dir, value => { a.cfg.dir = value; rerender(); }
       ));
+    } else if (a.type === "teleport") {
+      // runes saved before the option existed adopt the role default once opened
+      a.cfg.dir = teleportDir(a.cfg.dir, a.target);
+      a.cfg.distance = teleportFeet(a.cfg.distance);
+      this._dimLabel(wrap, rf("act.direction"));
+      wrap.appendChild(this._pills(
+        [["away", rf("opt.teleport.away")], ["toward", rf("opt.teleport.toward")]],
+        a.cfg.dir, value => { a.cfg.dir = value; rerender(); }
+      ));
+      this._dimLabel(wrap, rf("act.distance"));
+      wrap.appendChild(this._pills(
+        TELEPORT_DISTANCES.map(n => { const d = dnd5eDisplayDistance(n); return [n, rf("act.feet", { value: d.value, unit: d.unit })]; }),
+        a.cfg.distance, value => { a.cfg.distance = value; rerender(); }
+      ));
     } else if (a.type === "stat") {
+      this._dimLabel(wrap, rf("act.effect"));
       wrap.appendChild(this._pills(
         STAT_KEYS.map(k => [k, rf(`opt.stat.${STAT_OPT_KEYS[k]}`)]),
         a.cfg.stat, value => { a.cfg.stat = value; rerender(); }
       ));
     } else if (a.type === "damage") {
+      this._dimLabel(wrap, rf("act.mode"));
       wrap.appendChild(this._pills(
         [["damage", rf("opt.damage.damage")], ["heal", rf("opt.damage.heal")]],
         a.cfg.kind, value => { a.cfg.kind = value; rerender(); }
       ));
       if (a.cfg.kind === "damage") {
+        this._dimLabel(wrap, rf("act.damageType"));
         wrap.appendChild(this._pills(
           DAMAGE_TYPES.map(t => {
             const cfg = CONFIG.DND5E?.damageTypes?.[t];
@@ -1013,6 +1200,7 @@ export class RuneforgeApp extends AppV2 {
         ));
       }
     } else if (a.type === "status") {
+      this._dimLabel(wrap, rf("act.condition"));
       wrap.appendChild(this._pills(
         STATUS_KEYS.map(s => {
           const entry = CONFIG.statusEffects?.find(x => x.id === s);
@@ -1083,7 +1271,7 @@ export class RuneforgeApp extends AppV2 {
       rLabel.textContent = rf("act.radius");
       wrap.appendChild(rLabel);
       wrap.appendChild(this._pills(
-        [10, 15, 30].map(r => [r, rf("act.feet", { ft: r })]),
+        [10, 15, 30].map(r => { const d = dnd5eDisplayDistance(r); return [r, rf("act.feet", { value: d.value, unit: d.unit })]; }),
         a.cfg.radius ?? 30,
         value => { a.cfg.radius = value; rerender(); }
       ));
@@ -1341,9 +1529,12 @@ export class RuneforgeApp extends AppV2 {
 
   _buildCombo() {
     const cs = this.comboSt;
-    const body = this._body;
+    const body = document.createElement("div");
+    body.className = "rf-steps";
+    this._body.appendChild(body);
 
     const sec = this._section("combo.trio", 1);
+    this._dimLabel(sec, rf("combo.category"));
     sec.appendChild(this._pills(
       ["melee", "ranged", "armor"].map(c => [c, game.i18n.localize(`${MODULE_ID}.presets.${c}`)]),
       cs.category,

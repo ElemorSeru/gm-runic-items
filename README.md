@@ -2,7 +2,7 @@
 
 [![Patreon](https://img.shields.io/badge/Patreon-F96854?style=for-the-badge&logo=patreon&logoColor=white)](https://patreon.com/Elemor)
 [![Foundry Version](https://img.shields.io/badge/Foundry-v12--v14-informational?style=for-the-badge)](https://foundryvtt.com)
-[![Module Version](https://img.shields.io/badge/Version-1.2.0-success?style=for-the-badge)](https://github.com/ElemorSeru/gm-runic-items/releases/latest)
+[![Module Version](https://img.shields.io/badge/Version-1.3.0-success?style=for-the-badge)](https://github.com/ElemorSeru/gm-runic-items/releases/latest)
 <img alt="GitHub Downloads (all assets, latest release)" src="https://img.shields.io/github/downloads/ElemorSeru/gm-runic-items/latest/total">
 
 A Foundry VTT module for D&D 5e that lets GMs inscribe named runes onto weapons and armor, granting combat effects, stat boosts, feats, and spells. Designed for fast, thematic item upgrades without the overhead of crafting systems.
@@ -156,6 +156,7 @@ Everything is stored in the world and can be exported to JSON and imported into 
 - The Ally Dash and Guardian Rush actions pathfind around blocked squares and other tokens, moving as close as possible if the ideal destination isn't reachable.
 - The in-sheet panel is titled **Solvarian Runecraft**.
 - The Solvarian Runecraft panel works with both the core dnd5e item sheet and [Tidy 5e Sheets](https://foundryvtt.com/packages/tidy5e-sheet); no configuration needed.
+- Distances in rune descriptions and effects (pushes, radii, teleports, light) respect your scene's grid distance and dnd5e's metric setting, converting automatically. A push described as "up to 15 ft" reads as its converted meter equivalent on a metric world, and movement math scales to the scene's actual grid distance.
 
 ---
 

@@ -1,3 +1,6 @@
+// how far off the push line a shove is allowed to bend around an obstacle
+const PUSH_ARC = Math.PI / 4;
+
 const SQUARE_NEIGHBOR_OFFSETS = [
   [-1, 0], [1, 0], [0, -1], [0, 1],
   [-1, -1], [1, -1], [-1, 1], [1, 1]
@@ -27,14 +30,32 @@ function cellCenter(x, y, gridSize) {
   return { x: x + gridSize / 2, y: y + gridSize / 2 };
 }
 
-function isCellBlocked(token, fromCenter, toCenter, toX, toY, gridSize) {
-  const backend = CONFIG.Canvas?.polygonBackends?.move;
-  if (backend?.testCollision?.(fromCenter, toCenter, { type: "move", mode: "any" })) return true;
+function isOutOfBounds(x, y, gridSize) {
+  const rect = canvas?.dimensions?.rect;
+  if (!rect) return false;
+  return x < rect.x || y < rect.y ||
+    x + gridSize > rect.x + rect.width ||
+    y + gridSize > rect.y + rect.height;
+}
+
+function isCellOccupied(token, toX, toY, gridSize) {
   return canvas.tokens.placeables.some(t =>
     t.id !== token.id &&
     Math.abs(t.x - toX) < gridSize &&
     Math.abs(t.y - toY) < gridSize
   );
+}
+
+function isCellBlocked(token, fromCenter, toCenter, toX, toY, gridSize) {
+  if (isOutOfBounds(toX, toY, gridSize)) return true;
+  const backend = CONFIG.Canvas?.polygonBackends?.move;
+  if (backend?.testCollision?.(fromCenter, toCenter, { type: "move", mode: "any" })) return true;
+  return isCellOccupied(token, toX, toY, gridSize);
+}
+
+function angleDelta(a, b) {
+  const d = Math.abs(a - b) % (Math.PI * 2);
+  return d > Math.PI ? (Math.PI * 2) - d : d;
 }
 
 export function findReachableCells(token, maxFeet) {
@@ -89,6 +110,30 @@ export function findBestCellTowardTarget(reachableCells, targetCenter) {
   return best;
 }
 
+export function findBestCellAwayFrom(reachableCells, referenceCenter, originCenter) {
+  const gridSize = canvas.grid.size;
+  const pushAngle = angleBetween(referenceCenter, originCenter);
+  const startDist = measureDist(originCenter, referenceCenter);
+  let best = null;
+  let bestDist = 0;
+  let bestOff = Infinity;
+
+  for (const cell of reachableCells) {
+    if (cell.cost === 0) continue;
+    const center = cellCenter(cell.x, cell.y, gridSize);
+    const off = angleDelta(angleBetween(originCenter, center), pushAngle);
+    if (off > PUSH_ARC) continue;
+    const dist = measureDist(center, referenceCenter);
+    if (dist <= startDist) continue;
+    if (best && (dist < bestDist || (dist === bestDist && off >= bestOff))) continue;
+    best = cell;
+    bestDist = dist;
+    bestOff = off;
+  }
+
+  return best;
+}
+
 export function findBestAdjacentCell(reachableCells, anchorToken, secondaryToken = null) {
   const gridSize = canvas.grid.size;
   const unit = canvas.grid.distance ?? 5;
@@ -133,4 +178,26 @@ export function computeRayDestination(token, angleRad, maxSquares) {
   }
 
   return { x: current.x, y: current.y, squares: movedSquares };
+}
+
+export function computeBlinkDestination(token, angleRad, maxSquares) {
+  const gridSize = canvas.grid.size;
+  const origin = { x: token.x, y: token.y };
+  const fromCenter = cellCenter(origin.x, origin.y, gridSize);
+  const sight = CONFIG.Canvas?.polygonBackends?.sight;
+
+  for (let i = maxSquares; i >= 1; i--) {
+    const dist = i * gridSize;
+    const dx = Math.round(Math.cos(angleRad) * dist);
+    const dy = Math.round(Math.sin(angleRad) * dist);
+    const candidate = snapTopLeft(origin.x + dx, origin.y + dy);
+    if (candidate.x === origin.x && candidate.y === origin.y) continue;
+    if (isOutOfBounds(candidate.x, candidate.y, gridSize)) continue;
+    if (isCellOccupied(token, candidate.x, candidate.y, gridSize)) continue;
+    const toCenter = cellCenter(candidate.x, candidate.y, gridSize);
+    if (sight?.testCollision?.(fromCenter, toCenter, { type: "sight", mode: "any" })) continue;
+    return { x: candidate.x, y: candidate.y, squares: i };
+  }
+
+  return { x: origin.x, y: origin.y, squares: 0 };
 }

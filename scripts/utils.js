@@ -1,7 +1,36 @@
+import { measureDist } from "./movement.js";
 import { RUNE_REGISTRY } from "./rune-registry.js";
 import { getCustomRunesByCategory } from "./rune-store.js";
 
 const ARMOR_AMBIGUOUS_SUBTYPES = ["clothing", "rod", "trinket", "wondrous"];
+
+export function findAttackActivity(item) {
+  const acts = item?.system?.activities;
+  if (!acts) return null;
+  const list = typeof acts.find === "function" ? acts : Object.values(acts);
+  return list.find?.(a => a?.type === "attack") ?? null;
+}
+
+export function getAttackCategory(item) {
+  const attack = findAttackActivity(item);
+  const declared = attack?.attack?.type?.value;
+  if (declared === "melee") return "melee";
+  if (declared === "ranged") return "ranged";
+
+  if (item?.type !== "weapon") return attack ? "melee" : null;
+
+  const sub = item.system?.type?.value ?? "";
+  if (sub.endsWith("M") || sub === "improv") return "melee";
+  if (sub.endsWith("R") || sub === "siege") return "ranged";
+
+  const legacy = item.system?._source?.actionType ?? item.system?.actionType ?? "";
+  if (legacy === "mwak") return "melee";
+  if (legacy === "rwak") return "ranged";
+
+  const props = item.system?.properties;
+  const thrown = props instanceof Set ? props.has("thr") : props?.thr === true;
+  return thrown ? "ranged" : "melee";
+}
 
 export function getItemCategory(item) {
   if (item.type === "equipment") {
@@ -120,6 +149,89 @@ export function renderTemplateCompat(path, data) {
 export function loadTemplatesCompat(paths) {
   const fn = foundry.applications?.handlebars?.loadTemplates ?? globalThis.loadTemplates;
   return fn(paths);
+}
+
+function dnd5eConvertLength(value, from, to) {
+  const convert = globalThis.dnd5e?.utils?.convertLength;
+  if (typeof convert !== "function") return value;
+  try {
+    return convert(value, from, to, { strict: false });
+  } catch {
+    return value;
+  }
+}
+
+function sceneGridInfo() {
+  const units = canvas?.scene?.grid?.units || canvas?.grid?.units || "ft";
+  const distance = canvas?.scene?.grid?.distance || canvas?.grid?.distance || 5;
+  return { units, distance };
+}
+
+export function feetPerGridSquare() {
+  const { units, distance } = sceneGridInfo();
+  return dnd5eConvertLength(distance, units, "ft") || 5;
+}
+
+export function gridSquaresForFeet(feet) {
+  const perSquare = feetPerGridSquare();
+  if (!perSquare) return 0;
+  return Math.max(0, Math.round(feet / perSquare));
+}
+
+export function feetToSceneDistance(feet) {
+  const { units } = sceneGridInfo();
+  return dnd5eConvertLength(feet, "ft", units);
+}
+
+export function sceneDistanceToFeet(distance) {
+  const { units } = sceneGridInfo();
+  return dnd5eConvertLength(distance, units, "ft");
+}
+
+function dnd5eDisplayUnitKey() {
+  const api = globalThis.dnd5e?.utils;
+  if (typeof api?.convertLength !== "function") return "ft";
+  try {
+    if (typeof api.defaultUnits === "function") return api.defaultUnits("length") || "ft";
+    if (game.settings.settings.has("dnd5e.metricLengthUnits") && game.settings.get("dnd5e", "metricLengthUnits")) {
+      return CONFIG.DND5E?.defaultUnits?.length?.metric ?? "m";
+    }
+  } catch {
+    // dnd5e < 4.4 doesn't have defaultUnits or metric settings
+  }
+  return "ft";
+}
+
+export function withinFeet(a, b, feet) {
+  return measureDist(a, b) <= feetToSceneDistance(feet);
+}
+function actorLengthUnits(actor) {
+  const units = actor?.system?.attributes?.movement?.units;
+  if (units) return units;
+  try {
+    const fallback = globalThis.dnd5e?.utils?.defaultUnits;
+    if (typeof fallback === "function") return fallback("length") || "ft";
+  } catch {
+    // dnd5e < 4.4 doesn't have defaultUnits or metric settings so feet is the only unit
+  }
+  return "ft";
+}
+export function feetToActorUnits(actor, feet) {
+  return dnd5eConvertLength(feet, "ft", actorLengthUnits(actor));
+}
+export function actorUnitsToFeet(actor, value) {
+  return dnd5eConvertLength(value, actorLengthUnits(actor), "ft");
+}
+export function actorSpeedInSceneUnits(actor, key = "walk") {
+  const units = actorLengthUnits(actor);
+  const raw = actor?.system?.attributes?.movement?.[key] ?? dnd5eConvertLength(30, "ft", units);
+  return dnd5eConvertLength(raw, units, sceneGridInfo().units);
+}
+export function dnd5eDisplayDistance(feet) {
+  const unitKey = dnd5eDisplayUnitKey();
+  const value = Math.round(dnd5eConvertLength(feet, "ft", unitKey) * 10) / 10;
+  const unit = CONFIG.DND5E?.movementUnits?.[unitKey]?.abbreviation ?? unitKey;
+  return { value, unit };
 }
 
 // rollAbilitySave was replaced by rollSavingThrow in dnd5e 4.x

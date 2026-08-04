@@ -77,7 +77,7 @@ All rune and combo damage is applied as typed damage, so target resistance, vuln
 
 **Stonewarden** - When the wearer drops below half HP, the rune flares and restores `{die}` HP. It also flares if the wearer falls prone while already below half HP. Once per combat.
 
-**Vanguard** - When an ally is struck by a melee attack, the wearer may use their reaction to move adjacent to that ally. The attacker suffers disadvantage on all attacks until the end of the round.
+**Vanguard** - When an ally is struck by a melee attack, the wearer may use their reaction to move adjacent to that ally. The attacker suffers disadvantage on all attacks until the end of the round. Once per combat.
 
 **Wardpulse** - When struck by a melee attack, the attacker makes a DC 14 Constitution save or loses their bonus action until the end of their next turn. Once per round.
 
@@ -96,6 +96,10 @@ Many rune descriptions reference `{die}`. This die is determined by the item's r
 | Rare | 1d6 |
 | Very Rare | 1d8 |
 | Legendary | 1d10 |
+
+### Distance and Units
+
+Rune descriptions and effects that involve distance (pushes, radii, teleports, light) read your scene's grid distance and dnd5e's "Use Metric Length Units" setting, and convert automatically. Descriptions display in whichever unit the world is set to, and movement math scales to the scene's actual grid distance.
 
 ---
 
@@ -289,7 +293,7 @@ The editor walks through five steps. The live preview on the right shows the run
 
 | Action | Effect |
 |--------|--------|
-| Push / Pull Token | Moves the target die x5 ft directly away from or toward the reference point, blocked by walls and occupied squares |
+| Push / Pull Token | Moves the target up to die x5 ft away from or toward the reference point. The distance is a movement budget: the shove paths around walls and occupied squares, bending up to 45 degrees off the push line, and never doubles back |
 | Modify Stat | Applies an ActiveEffect: AC +2 or -2, speed penalty/halved/zero, attack disadvantage, check disadvantage, temporary HP, resistance to all damage, or initiative advantage |
 | Damage / Heal | Rolls the rarity die and applies damage of a chosen type, or restores HP |
 | Apply Status | Applies a condition (poisoned, blinded, deafened, frightened, prone, restrained) |
@@ -300,7 +304,7 @@ The editor walks through five steps. The live preview on the right shows the run
 | Ally Dash | One ally within the chosen radius may immediately move up to die x5 ft toward the target, with a picker dialog when several allies qualify (how Forgebell works) |
 | Guardian Rush | On Ally Struck: the wearer may use their reaction to move adjacent to the struck ally; reaching them imposes attack disadvantage on the attacker (how Vanguard works) |
 | Token Light | The target sheds bright light in a 20 ft radius; the previous lighting is restored when the effect is removed |
-| Teleport | Shifts the target up to 15 ft toward the reference point |
+| Teleport | Blinks the target up to 10, 15, or 30 ft away from or toward the reference point. Unlike Push / Pull it crosses walls and creatures, but only to a space the origin can see, so it cannot reach a sealed room. Direction defaults to away for the struck target and the attacker, toward for everyone else |
 
 When the save gate is on, each action also chooses its save interaction: **Negated** (skipped on a successful save), **Halved** (damage only), or **Always applies**.
 
@@ -330,6 +334,7 @@ If an item references a custom rune whose definition is missing (deleted, or not
 - The Ally Dash action pathfinds the same way; if no ally is within its radius it posts a chat line and does nothing further.
 - The Brand action's payoff (the bonus damage on a later hit) checks for a matching effect on every weapon damage chat message, so it works whether the follow up hit comes from a runic weapon or a plain one.
 - The Contagion action's spread check runs once per combat turn start, scanning every combatant for a matching effect and their adjacent tokens, filtered by the action's allies/enemies/all setting. It's the same sweep Wasteblight uses (restricted to enemies).
+- Distance based actions (Move, Cloud, Teleport, Light, and radius fields) follow the same grid distance/metric conversion as the built-in runes; see [Distance and Units](#distance-and-units).
 
 ---
 

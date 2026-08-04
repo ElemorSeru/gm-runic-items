@@ -1,7 +1,9 @@
+import { dnd5eDisplayDistance } from "./utils.js";
+
 const MODULE_ID = "gm-runic-items";
 
-function cbI18n(key) {
-  return game.i18n.localize(`${MODULE_ID}.combo.description.${key}`);
+function cbI18n(key, data) {
+  return data ? game.i18n.format(`${MODULE_ID}.combo.description.${key}`, data) : game.i18n.localize(`${MODULE_ID}.combo.description.${key}`);
 }
 
 export const COMBO_REGISTRY = [
@@ -41,7 +43,7 @@ export const COMBO_REGISTRY = [
     id: "ironwall",
     runes: ["emberveil", "wardpulse", "forgeshield"],
     name: "Ironwall",
-    get description() { return cbI18n("ironwall"); },
+    get description() { const d = dnd5eDisplayDistance(20); return cbI18n("ironwall", { radius: d.value, unit: d.unit }); },
     glyph: "M5,3L12,1L19,3L19,13L12,22L5,13ZM7,5L12,3L17,5L17,13L12,20L7,13ZM12,3L12,20",
     color: "#1a5276"
   },
