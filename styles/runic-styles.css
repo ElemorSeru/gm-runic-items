@@ -15,7 +15,7 @@
   opacity: 0.6;
 }
 .runic-panel-readonly .rune-slot.slot-filled {
-  opacity: 0.75; 
+  opacity: 0.75;
 }
 .runic-panel-readonly .runic-rarity-badge {
   opacity: 0.6;
@@ -25,7 +25,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  border-bottom: 1px solid rgba(255,255,255,0.1);
+  border-bottom: 1px solid color-mix(in srgb, currentColor 18%, transparent);
   padding-bottom: 6px;
 }
 
@@ -35,11 +35,12 @@
   margin-left: auto;
 }
 
-.runic-panel .runic-preset-btn {
+.application .runic-panel .runic-preset-btn,
+.app .runic-panel .runic-preset-btn {
   background: none;
-  border: 1px solid rgba(255,255,255,0.15);
+  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);
   border-radius: 3px;
-  color: rgba(255,255,255,0.45);
+  color: color-mix(in srgb, currentColor 62%, transparent);
   cursor: pointer;
   font-size: 0.75em;
   padding: 2px 7px;
@@ -49,12 +50,19 @@
   justify-content: center;
   transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
 }
-.runic-panel .runic-preset-btn:hover {
-  color: rgba(255,255,255,0.85);
-  border-color: rgba(255,255,255,0.35);
+.application .runic-panel .runic-preset-btn:hover,
+.app .runic-panel .runic-preset-btn:hover {
+  color: color-mix(in srgb, currentColor 85%, transparent);
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
 }
-.runic-panel .runic-preset-btn.preset-saved {
-  color: #f1c40f;
+.application .runic-panel .runic-preset-btn > i,
+.app .runic-panel .runic-preset-btn > i {
+  margin: 0;
+}
+
+.application .runic-panel .runic-preset-btn.preset-saved,
+.app .runic-panel .runic-preset-btn.preset-saved {
+  color: #b8860b;
   border-color: #f1c40f88;
   box-shadow: 0 0 6px #f1c40f66;
   transition: none;
@@ -160,7 +168,7 @@
 }
 .rune-slot-combo .rune-socket-wrap { width: 46px; height: 54px; }
 .rune-slot-combo .rune-slot-label {
-  color: var(--rune-color, rgba(255,255,255,0.38));
+  color: var(--rune-color, color-mix(in srgb, currentColor 62%, transparent));
   opacity: 0.7;
 }
 
@@ -245,7 +253,7 @@
   color: rgba(240,215,140,0.95);
   background: rgba(180,140,30,0.2);
   border-style: solid;
-  border-width: 1.5px 1px 1.5px 12px;
+  border-width: 1px 1px 2px;
   border-color: rgba(200,160,40,0.7);
   padding: 6px 10px;
   border-radius: 3px;
@@ -360,7 +368,7 @@
   font-weight: bold;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: rgba(255,255,255,0.75);
+  color: color-mix(in srgb, currentColor 75%, transparent);
   padding-left: 8px;
 }
 
@@ -381,12 +389,15 @@
 .runic-rarity-badge[data-rarity="Very Rare"] { color: #8e44ad; border-color: #8e44ad; }
 .runic-rarity-badge[data-rarity="Legendary"] { color: #e67e22; border-color: #e67e22; }
 
-.runic-section {
-  border: 1px solid rgba(255,255,255,0.1);
+.application .runic-panel .runic-section,
+.app .runic-panel .runic-section {
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
   border-radius: 6px;
   padding: 6px 10px 10px;
+  margin: 0;
   background: transparent;
   position: relative;
+  display: block;
 }
 
 .runic-crack-overlay {
@@ -439,12 +450,15 @@
 @keyframes crack-msg-appear {
   to { opacity: 1; }
 }
-.runic-section legend {
+.application .runic-panel .runic-section legend,
+.app .runic-panel .runic-section legend {
+  width: auto;
   padding: 0 6px;
+  font-family: inherit;
   font-size: 0.75em;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255,255,255,0.5);
+  color: color-mix(in srgb, currentColor 64%, transparent);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -474,18 +488,25 @@
   cursor: pointer;
   position: relative;
   z-index: 1;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.65)) drop-shadow(0 0 1px rgba(255,255,255,0.18));
+  filter:
+    drop-shadow(0 0 0.5px color-mix(in srgb, currentColor 55%, transparent))
+    drop-shadow(0 1px 0 color-mix(in srgb, currentColor 30%, transparent))
+    drop-shadow(0 2px 4px rgba(0,0,0,0.35));
   transition: filter 0.3s ease;
 }
 .rune-slot:hover {
-  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.9)) drop-shadow(0 0 1.5px rgba(255,255,255,0.28)) brightness(1.2);
+  filter:
+    drop-shadow(0 0 0.5px color-mix(in srgb, currentColor 75%, transparent))
+    drop-shadow(0 1px 0 color-mix(in srgb, currentColor 45%, transparent))
+    drop-shadow(0 2px 6px rgba(0,0,0,0.5))
+    brightness(1.12);
 }
 .rune-socket {
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  background: rgba(255,255,255,0.07);
+  background: color-mix(in srgb, currentColor 15%, transparent);
   box-shadow:
     inset 0 2px 5px rgba(0,0,0,0.55),
     inset 0 -1px 1px rgba(255,255,255,0.06);
@@ -630,7 +651,7 @@
 
 .rune-slot-label {
   font-size: 0.64em;
-  color: rgba(255,255,255,0.38);
+  color: color-mix(in srgb, currentColor 62%, transparent);
   letter-spacing: 0.05em;
 }
 
@@ -690,7 +711,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  background: rgba(0,0,0,0.45);
+  background: #14131b;
   border: 1px solid rgba(255,255,255,0.13);
   border-radius: 4px;
   padding: 4px 8px;
@@ -708,7 +729,8 @@
   color: rgba(255,255,255,0.35);
 }
 
-.legacy-search-input-wrap .legacy-search-input {
+.application .runic-panel .rune-picker-panel .legacy-search-input-wrap .legacy-search-input,
+.app .runic-panel .rune-picker-panel .legacy-search-input-wrap .legacy-search-input {
   flex: 1 1 0%;
   min-width: 0;
   width: 0;
@@ -719,19 +741,21 @@
   font-size: 0.78em;
   letter-spacing: 0.04em;
 }
-.legacy-search-input-wrap .legacy-search-input::placeholder {
+.application .runic-panel .rune-picker-panel .legacy-search-input-wrap .legacy-search-input::placeholder,
+.app .runic-panel .rune-picker-panel .legacy-search-input-wrap .legacy-search-input::placeholder {
   color: rgba(255,255,255,0.28);
   font-style: italic;
 }
 
 .legacy-search-row .legacy-remove-btn {
   flex: 0 0 auto;
+  margin: 0;
   width: auto;
   min-width: 0;
-  background: rgba(255,255,255,0.06);
-  border: 1px solid rgba(255,255,255,0.11);
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
   border-radius: 4px;
-  color: rgba(255,255,255,0.4);
+  color: color-mix(in srgb, currentColor 62%, transparent);
   font-size: 0.7em;
   letter-spacing: 0.06em;
   padding: 4px 10px;
@@ -747,7 +771,7 @@
 
 .legacy-search-hint {
   font-size: 0.7em;
-  color: rgba(255,255,255,0.24);
+  color: color-mix(in srgb, currentColor 66%, transparent);
   font-style: italic;
   text-align: center;
   padding: 2px 0 6px;
@@ -787,7 +811,7 @@
   display: none;
   margin-top: 8px;
   padding: 8px;
-  background: rgba(0,0,0,0.55);
+  background: #14131b;
   border: 1px solid rgba(255,255,255,0.1);
   border-radius: 6px;
   box-sizing: border-box;
@@ -845,6 +869,28 @@
 }
 .rune-option:hover .rune-option-name { color: rgba(255,255,255,0.9); }
 .rune-option.opt-selected .rune-option-name { color: #fff; }
+
+/* compendium heading in legacy search results */
+.rune-picker-grid .legacy-source-head {
+  flex: 0 0 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  font-size: 0.64em;
+  font-weight: bold;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #9a9a9a;
+  background: rgba(154, 154, 154, 0.14);
+  border-left: 2px solid #9a9a9a;
+}
+.rune-picker-grid .legacy-source-folder {
+  margin-left: auto;
+  font-weight: normal;
+  text-transform: none;
+  opacity: 0.75;
+}
 
 
 /* Runeforge builder window */
@@ -929,7 +975,7 @@
   text-transform: uppercase;
   padding: 6px 10px;
   border-style: solid;
-  border-width: 1.5px 1px 1.5px 12px;
+  border-width: 1px 1px 2px;
   border-radius: 0;
   margin: 14px 0 0;
   font-weight: bold;
@@ -941,7 +987,7 @@
 .runeforge-app .rf-cat-head + .rf-card-grid {
   padding: 10px;
   border-style: solid;
-  border-width: 0 1px 1.5px 12px;
+  border-width: 0 1px 1.5px;
   border-radius: 0;
 }
 .runeforge-app .rf-cat-melee + .rf-card-grid { background: rgba(160,35,35,0.06); border-color: rgba(200,70,70,0.4); }
@@ -953,7 +999,7 @@
 .runeforge-app .rf-cat-count { font-weight: normal; opacity: 0.65; letter-spacing: 0; }
 .runeforge-app .rf-card-grid.is-collapsed { display: none; }
 .runeforge-app .rf-cat-head.rf-cat-mine,
-.runeforge-app .rf-cat-mine + .rf-card-grid { border-left-style: double; }
+.runeforge-app .rf-cat-mine + .rf-card-grid { background: transparent; }
 .runeforge-app .rf-icon-btn { padding: 6px 10px; }
 .runeforge-app .rf-icon-btn > i { margin-right: 0; }
 .runeforge-app .rf-subtabs { display: flex; flex-direction: row; gap: 4px; margin-bottom: 12px; }
@@ -1106,7 +1152,7 @@
   border: 1px solid color-mix(in srgb, var(--rf-sec-color, #e8b84a) 32%, rgba(255,255,255,0.1));
   border-top: 1.5px solid color-mix(in srgb, var(--rf-sec-color, #e8b84a) 60%, transparent);
   border-bottom: 1.5px solid color-mix(in srgb, var(--rf-sec-color, #e8b84a) 60%, transparent);
-  border-left: 12px solid color-mix(in srgb, var(--rf-sec-color, #e8b84a) 60%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--rf-sec-color, #e8b84a) 60%, transparent);
   border-right: 1px solid color-mix(in srgb, var(--rf-sec-color, #e8b84a) 60%, transparent);
   border-radius: 0;
   padding: 10px 12px 12px;
@@ -1119,11 +1165,31 @@
 .runeforge-app .rf-steps > .rf-section:nth-of-type(4) { --rf-sec-color: #e07856; }
 .runeforge-app .rf-steps > .rf-section:nth-of-type(5) { --rf-sec-color: #e8b84a; }
 .runeforge-app .rf-section legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   padding: 0 6px;
   font-size: 0.7em;
   letter-spacing: 0.09em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--rf-sec-color, #f0d78c) 80%, white);
+}
+
+/* Step number carries the section color */
+.runeforge-app .rf-section legend .rf-step-num {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--rf-sec-color, #e8b84a);
+  color: #1a1408;
+  font-family: var(--font-monospace, monospace);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
 }
 .runeforge-app .rf-section input[type="text"],
 .runeforge-app .rf-section textarea {
@@ -1268,6 +1334,36 @@
 .runeforge-app .rf-a-del:hover { color: rgba(255,150,150,0.95); }
 .runeforge-app .rf-action-cfg { padding: 2px 12px 11px 32px; border-top: 1px solid color-mix(in srgb, var(--rf-sec-color, #e8b84a) 16%, transparent); }
 .runeforge-app .rf-action-opts { margin-top: 6px; }
+
+/* action die override */
+.runeforge-app .rf-die-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.runeforge-app .rf-die-row .rf-die-input {
+  flex: 0 0 118px;
+  width: 118px;
+}
+.runeforge-app .rf-die-row .rf-die-hint {
+  font-size: 0.78em;
+  color: rgba(255,255,255,0.45);
+}
+.runeforge-app .rf-die-row .rf-die-warn {
+  color: #e0a63c;
+  font-size: 0.92em;
+  cursor: help;
+}
+.runeforge-app .rf-die-row.is-invalid .rf-die-input {
+  border-color: rgba(192,57,43,0.75);
+}
+.runeforge-app .rf-die-row.is-invalid .rf-die-hint {
+  color: #c0603a;
+}
+.runeforge-app .rf-die-row.is-warned .rf-die-hint {
+  color: #e0a63c;
+}
 .runeforge-app .rf-note { font-size: 0.7em; color: rgba(255,255,255,0.3); font-style: italic; display: block; margin-top: 6px; }
 .runeforge-app .rf-add-action {
   margin-top: 9px;
@@ -1296,22 +1392,36 @@
   --rf-pv-color: #9a948a;
   position: sticky;
   top: 0;
-  border: 1px solid color-mix(in srgb, var(--rf-pv-color) 32%, rgba(255,255,255,0.1));
-  border-top: 1.5px solid color-mix(in srgb, var(--rf-pv-color) 60%, transparent);
-  border-bottom: 1.5px solid color-mix(in srgb, var(--rf-pv-color) 60%, transparent);
-  border-right: 12px solid color-mix(in srgb, var(--rf-pv-color) 60%, transparent);
-  border-left: 1px solid color-mix(in srgb, var(--rf-pv-color) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rune-color, var(--rf-pv-color)) 30%, #3a3733);
   border-radius: 0;
-  padding: 14px 12px 14px 14px;
-  background: color-mix(in srgb, var(--rf-pv-color) 5%, transparent);
+  overflow: hidden;
+  padding: 0;
+  /* tinted by the rune being built */
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--rune-color, var(--rf-pv-color)) 7%, var(--rf-bg-2)),
+    var(--rf-bg-2) 120px);
 }
 .runeforge-app .rf-pv-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 12px;
   font-size: 0.66em;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: color-mix(in srgb, var(--rf-pv-color, #9a948a) 55%, white);
-  margin-bottom: 10px;
+  font-weight: 700;
+  border-bottom: 1px solid color-mix(in srgb, var(--rune-color, var(--rf-pv-color)) 35%, transparent);
+  color: color-mix(in srgb, var(--rune-color, var(--rf-pv-color)) 65%, white);
 }
+.runeforge-app .rf-pv-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rune-color, var(--rf-pv-color));
+  flex: none;
+}
+.runeforge-app .rf-pv-body { padding: 12px; }
 .runeforge-app .rf-pv-stage { display: flex; align-items: center; gap: 14px; padding: 6px 2px 12px; }
 .runeforge-app .rf-pv-socket {
   width: 54px;

@@ -1,4 +1,5 @@
 import { dnd5eDisplayDistance } from "./utils.js";
+import { toEffectData } from "./compat.js";
 
 const MODULE_ID = "gm-runic-items";
 
@@ -157,7 +158,7 @@ async function performResolved(kind, resolved) {
     case "effect": {
       const actor = await resolveActor(resolved.actorUuid);
       if (!actor) return;
-      await actor.createEmbeddedDocuments("ActiveEffect", [resolved.effectData]);
+      await actor.createEmbeddedDocuments("ActiveEffect", [toEffectData(resolved.effectData)]);
       return;
     }
     case "update": {
@@ -328,7 +329,7 @@ export async function gateStatus(actor, statusId, meta) {
 
 export async function gateEffect(actor, effectData, meta) {
   if (!isManualMode()) {
-    await actor.createEmbeddedDocuments("ActiveEffect", [effectData]);
+    await actor.createEmbeddedDocuments("ActiveEffect", [toEffectData(effectData)]);
     return true;
   }
   return gatePayload("effect", {

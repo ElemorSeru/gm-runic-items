@@ -1,6 +1,6 @@
 import { dnd5eDisplayDistance } from "./utils.js";
 import { statNarrationKey, triggerMatches } from "./rune-engine.js";
-import { ACTION_TYPES, teleportDir, teleportFeet } from "./rune-defs.js";
+import { ACTION_TYPES, teleportDir, teleportFeet, resolveDie, resolveRoundsDie, applyDieTokens } from "./rune-defs.js";
 
 const MODULE_ID = "gm-runic-items";
 
@@ -42,8 +42,8 @@ function whoLabel(role, ctx, radius) {
   return narrate(`who.${role}`);
 }
 
-async function resolveRounds(action, die) {
-  if (action.rounds === "die") return Math.max(1, await rollTotal(die));
+async function resolveRounds(action, ctx) {
+  if (action.rounds === "die") return Math.max(1, await rollTotal(resolveRoundsDie(action, ctx)));
   const n = Number(action.rounds);
   return Number.isInteger(n) && n >= 1 ? n : 1;
 }
@@ -54,7 +54,7 @@ function roundsLine(rounds, always = false) {
 }
 
 async function describeAction(action, ctx, def) {
-  const die = ctx.die;
+  const die = resolveDie(action, ctx);
   const name = whoLabel(action.target, ctx, action.radius);
   const lines = [];
 
@@ -65,7 +65,7 @@ async function describeAction(action, ctx, def) {
       break;
     }
     case "stat": {
-      const rounds = await resolveRounds(action, die);
+      const rounds = await resolveRounds(action, ctx);
       if (action.stat === "temp-hp") {
         lines.push(engine("tempHp", { name, total: await rollTotal(die) }));
         break;
@@ -100,7 +100,7 @@ async function describeAction(action, ctx, def) {
       break;
     }
     case "reminder": {
-      const rounds = await resolveRounds(action, die);
+      const rounds = await resolveRounds(action, ctx);
       lines.push(engine("reminder", { name, text: action.text ?? "" }));
       const r = roundsLine(rounds);
       if (r) lines.push(r);
@@ -110,7 +110,7 @@ async function describeAction(action, ctx, def) {
       lines.push(engine("brand", { name, die }));
       break;
     case "contagion": {
-      const rounds = await resolveRounds(action, die);
+      const rounds = await resolveRounds(action, ctx);
       lines.push(engine("contagion", { name }));
       lines.push(narrate("contagionSave", {
         dc: action.dc ?? 13,
@@ -159,7 +159,7 @@ export async function describeRuneOutcome(def, ctx) {
   }
   for (const action of def.actions ?? []) {
     if (action.type === "scripted") {
-      const desc = def.description ? String(def.description).replace(/\{die\}/g, ctx.die ?? "") : null;
+      const desc = applyDieTokens(def.description, def.actions, ctx.die) || null;
       lines.push(desc || narrate("scripted", { rune: def.name }));
       continue;
     }

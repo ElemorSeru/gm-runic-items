@@ -324,7 +324,7 @@ If an item references a custom rune whose definition is missing (deleted, or not
 
 ### Automation Notes for Custom Runes
 
-- Attack-roll disadvantage uses the midi-qol flag, like the built-in runes: enforced automatically with midi-qol installed, a visible reminder without it. Check disadvantage is automated in core dnd5e 4.1+ and also writes the midi-qol flag.
+- Attack-roll disadvantage uses the midi-qol flag like the built-in runes. It's enforced with midi-qol installed and shows as a reminder card without it. Check disadvantage is handled by core dnd5e 4.3+ and also writes the midi-qol flag.
 - The Damage action tags its roll with the chosen damage type, so target resistance, vulnerability, and immunity apply the same as any other damage source.
 - On Kill attributes the kill to the last runic weapon that hit the target within the previous 60 seconds.
 - On Spell Cast and Concentration Ends fire on the acting player's client and are relayed to the active GM for execution, so a GM must be connected.
@@ -383,11 +383,24 @@ Mechanically yes, with three caveats. Core combos never fire for duplicates (com
 | Requirement | Version |
 |-------------|---------|
 | Foundry VTT | 12 - 14 |
-| D&D 5e System | 4.1.0 - 5.x |
+| D&D 5e System | 4.1.0 - 6.x |
 
-Verified against Foundry v14 and dnd5e 5.3.3. dnd5e 4.1 is the practical minimum: it's the first release with `rollSavingThrow` and per-ability check-roll-mode, both of which the rune engine relies on.
+Tested on Foundry v14 (through 14.368) with dnd5e 5.3.3 and 6.0.5. dnd5e 4.1 is the minimum since the rune engine needs `rollSavingThrow`. Ability check disadvantage needs dnd5e 4.3.0, so on 4.1 and 4.2 it's a reminder instead.
 
-**midi-qol (optional)** - midi-qol is never required; every effect below still applies its full mechanical result (the ActiveEffect, the HP change, the token move) without it; only the flag based enforcement is skipped. Attack-roll disadvantage from Burntrace, Vanguard's Guardian's Rush, the Crystal Anchor combo, and the custom-rune attack-disadvantage option is applied through a midi-qol flag. Mirageward's opportunity-attack denial and Wardpulse/Ironwall's bonus action denial write the matching midi-qol action economy flag. With midi-qol installed these are enforced automatically; without it the effect still appears on the target as a reminder to apply by hand. Ability check disadvantage (Crystal Anchor and the custom rune option) is automated in core dnd5e 4.1+.
+**midi-qol (optional)** - Not required. Every effect still applies its mechanical result (the ActiveEffect, the HP change, the token move) without it, only the flag enforcement is skipped. Attack-roll disadvantage from Burntrace, Vanguard's Guardian's Rush, the Crystal Anchor combo and the custom rune option uses a midi-qol flag. Mirageward's opportunity-attack denial and Wardpulse/Ironwall's bonus action denial use midi-qol's action economy flag. With midi-qol these are enforced automatically. Without it the effect shows on the target as a reminder to apply by hand. Ability check disadvantage (Crystal Anchor and the custom rune option) is handled by core dnd5e 4.3+ and doesn't use midi-qol.
+
+### Which midi-qol flag the module writes
+
+midi-qol has renamed these flags between releases, so the module writes whichever one your version uses. Nothing to configure.
+
+| Effect | midi-qol 12.4.31 - 13.0.17 | midi-qol 13.0.18 and later |
+|--------|---------------------------|----------------------------|
+| Attack disadvantage | `disadvantage.attack.all` | `disadvantage.attack.all` |
+| Check disadvantage | `disadvantage.ability.check.all` | `disadvantage.check.all` |
+| Bonus action denied | `actions.bonus` | `actions.bonusActionsUsed` |
+| Reaction denied | `actions.reaction` | `actions.reactionsUsed` |
+
+Denying a reaction or bonus action also needs midi-qol's own action-economy enforcement switched on in its settings. With it off, the effect is a reminder card.
 
 **Automation scope** - Ashcloud (and the cloud spawned by the Blight Field combo) and Wasteblight's adjacent creature spread only roll saves and apply damage for hostile NPC tokens. Allied and player tokens are left for you to resolve.
 

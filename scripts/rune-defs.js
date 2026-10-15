@@ -5,6 +5,69 @@ const MODULE_ID = "gm-runic-items";
 
 export const RUNE_SCHEMA_VERSION = 2;
 
+const DIE_ACTION_TYPES = new Set(["damage", "move", "brand", "contagion", "cloud", "allyDash"]);
+
+const DIE_STATS = new Set(["temp-hp", "speed-penalty"]);
+
+export function actionUsesDie(action) {
+  if (!action) return false;
+  if (action.type === "stat") return DIE_STATS.has(action.stat);
+  return DIE_ACTION_TYPES.has(action.type);
+}
+
+export function actionUsesRoundsDie(action) {
+  if (action?.rounds !== "die") return false;
+  if (action.type === "stat") return action.stat !== "temp-hp";
+  return action.type === "reminder" || action.type === "contagion";
+}
+
+export function resolveDie(action, ctx) {
+  const override = typeof action?.die === "string" ? action.die.trim() : "";
+  return override || ctx?.die;
+}
+
+// separate from resolveDie so one field can't set both
+export function resolveRoundsDie(action, ctx) {
+  const override = typeof action?.roundsDie === "string" ? action.roundsDie.trim() : "";
+  return override || ctx?.die;
+}
+
+// {dieN} is magnitude, {rdieN} duration, bare tokens use action 1
+export function applyDieTokens(text, actions, fallbackDie) {
+  if (!text) return "";
+  const list = Array.isArray(actions) ? actions : [];
+  const at = i => resolveDie(list[i], { die: fallbackDie }) ?? "";
+  const rat = i => resolveRoundsDie(list[i], { die: fallbackDie }) ?? "";
+  return String(text)
+    .replace(/\{rdie(\d+)\}/g, (_, n) => rat(Math.max(0, Number(n) - 1)))
+    .replace(/\{rdie\}/g, () => rat(0))
+    .replace(/\{die(\d+)\}/g, (_, n) => at(Math.max(0, Number(n) - 1)))
+    .replace(/\{die\}/g, () => at(0));
+}
+
+export function isValidDieFormula(formula) {
+  const f = String(formula ?? "").trim();
+  if (!f) return false;
+  try {
+    return Roll.validate(f);
+  } catch {
+    return false;
+  }
+}
+
+export function dieFormulaRange(formula) {
+  const f = String(formula ?? "").trim();
+  if (!f || !isValidDieFormula(f)) return null;
+  try {
+    const min = new Roll(f).evaluateSync({ minimize: true, strict: false }).total;
+    const max = new Roll(f).evaluateSync({ maximize: true, strict: false }).total;
+    if (!Number.isFinite(min) || !Number.isFinite(max)) return null;
+    return { min, max };
+  } catch {
+    return null;
+  }
+}
+
 export const TRIGGER_DEFS = {
   onHit: { cats: ["melee", "ranged"], roles: ["target", "self", "allies", "enemies"] },
   onCrit: { cats: ["melee", "ranged"], roles: ["target", "self", "allies", "enemies"] },
@@ -272,6 +335,14 @@ export function validateRuneDef(def) {
       }
       if (a.rounds != null && a.rounds !== "die" && !(Number.isInteger(a.rounds) && a.rounds >= 1 && a.rounds <= 10)) {
         e("actionRounds", { index });
+      }
+      if (a.die != null) {
+        if (typeof a.die !== "string" || a.die.length > 40) e("actionDieType", { index });
+        else if (a.die.trim() && !isValidDieFormula(a.die)) e("actionDieFormula", { index, die: a.die });
+      }
+      if (a.roundsDie != null) {
+        if (typeof a.roundsDie !== "string" || a.roundsDie.length > 40) e("actionDieType", { index });
+        else if (a.roundsDie.trim() && !isValidDieFormula(a.roundsDie)) e("actionDieFormula", { index, die: a.roundsDie });
       }
       if (a.radius != null && !(Number.isInteger(a.radius) && a.radius >= 5 && a.radius <= 60)) {
         const min = dnd5eDisplayDistance(5);

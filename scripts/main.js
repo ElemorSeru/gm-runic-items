@@ -9,6 +9,7 @@ import { loadTemplatesCompat } from "./utils.js";
 import { openRuneforge } from "./runeforge-app.js";
 import { registerUpdateChecker } from "./update-checker.js";
 import { runWorldDataCheck } from "./data-migration.js";
+import { reconcileAllEffects } from "./effect-manager.js";
 
 const ALL_RUNES = Object.values(RUNE_REGISTRY).flat();
 
@@ -134,6 +135,7 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", () => {
   runWorldDataCheck();
+  reconcileAllEffects();
 });
 
 Hooks.on("renderSettingsConfig", (_app, html) => {

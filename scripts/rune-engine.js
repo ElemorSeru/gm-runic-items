@@ -1,8 +1,8 @@
 import { rollSave, gridSquaresForFeet, feetPerGridSquare, feetToSceneDistance, sceneDistanceToFeet, dnd5eDisplayDistance, withinFeet, feetToActorUnits, actorUnitsToFeet, actorSpeedInSceneUnits } from "./utils.js";
-import { AURA_RADIUS, ACTION_TYPES, validateRuneDef, formatValidationError, teleportDir, teleportFeet } from "./rune-defs.js";
+import { AURA_RADIUS, ACTION_TYPES, validateRuneDef, formatValidationError, teleportDir, teleportFeet, resolveDie, resolveRoundsDie } from "./rune-defs.js";
 import { getActiveComboMerged, getCustomCombos } from "./rune-store.js";
 import { measureDist, angleBetween, computeBlinkDestination, findReachableCells, findBestCellTowardTarget, findBestCellAwayFrom, findBestAdjacentCell } from "./movement.js";
-import { dnd5eVersionAtLeast } from "./compat.js";
+import { dnd5eVersionAtLeast, midiDenyBonusChanges, midiDenyReactionChanges, midiDisadvCheckChanges, speedKey, movementSpeed } from "./compat.js";
 import {
   gateMove, gateDocUpdate, gateDamage, gateStatus, gateEffect, gateTemplate,
   gateSaveCard, registerSaveResume, isManualMode
@@ -123,7 +123,7 @@ async function rollDie(die) {
 }
 
 async function resolveRounds(action, ctx) {
-  if (action.rounds === "die") return Math.max(1, await rollDie(ctx.die));
+  if (action.rounds === "die") return Math.max(1, await rollDie(resolveRoundsDie(action, ctx)));
   const n = Number(action.rounds);
   return Number.isInteger(n) && n >= 1 ? n : 1;
 }
@@ -159,28 +159,28 @@ const ALL_DAMAGE_TYPES = [
 ];
 
 const STAT_BUILDERS = {
-  "ac-bonus": () => ({ changes: [{ key: "system.attributes.ac.bonus", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "2", priority: 20 }], descKey: "statAcBonus", data: {} }),
-  "ac-penalty": () => ({ changes: [{ key: "system.attributes.ac.bonus", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "-2", priority: 20 }], descKey: "statAcPenalty", data: {} }),
-  "speed-half": () => ({ changes: [{ key: "system.attributes.movement.walk", mode: CONST.ACTIVE_EFFECT_MODES.MULTIPLY, value: "0.5", priority: 20 }], descKey: "statSpeedHalf", data: {} }),
-  "speed-zero": () => ({ changes: [{ key: "system.attributes.movement.walk", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "0", priority: 30 }], descKey: "statSpeedZero", data: {} }),
-  "disadv-attack": () => ({ changes: [{ key: "flags.midi-qol.disadvantage.attack.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }], descKey: "statDisadvAttack", data: {} }),
+  "ac-bonus": () => ({ changes: [{ key: "system.attributes.ac.bonus", type: "add", value: "2", priority: 20 }], descKey: "statAcBonus", data: {} }),
+  "ac-penalty": () => ({ changes: [{ key: "system.attributes.ac.bonus", type: "add", value: "-2", priority: 20 }], descKey: "statAcPenalty", data: {} }),
+  "speed-half": (targetActor) => ({ changes: [{ key: speedKey(targetActor), type: "multiply", value: "0.5", priority: 20 }], descKey: "statSpeedHalf", data: {} }),
+  "speed-zero": (targetActor) => ({ changes: [{ key: speedKey(targetActor), type: "override", value: "0", priority: 30 }], descKey: "statSpeedZero", data: {} }),
+  "disadv-attack": () => ({ changes: [{ key: "flags.midi-qol.disadvantage.attack.all", type: "override", value: "1", priority: 20 }], descKey: "statDisadvAttack", data: {} }),
   "disadv-check": () => ({ changes: [
-    { key: "flags.midi-qol.disadvantage.ability.check.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 },
+    ...midiDisadvCheckChanges(),
     // handle per-ability in core
-    ...["str", "dex", "con", "int", "wis", "cha"].map(a => ({ key: `system.abilities.${a}.check.roll.mode`, mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "-1", priority: 20 }))
+    ...["str", "dex", "con", "int", "wis", "cha"].map(a => ({ key: `system.abilities.${a}.check.roll.mode`, type: "add", value: "-1", priority: 20 }))
   ], descKey: "statDisadvCheck", data: {} }),
   // action economy has no core dnd5e equivalent; midi-qol honors these flags
-  "deny-bonus": () => ({ changes: [{ key: "flags.midi-qol.actions.bonus", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }], descKey: "statDenyBonus", data: {} }),
-  "deny-reaction": () => ({ changes: [{ key: "flags.midi-qol.actions.reaction", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }], descKey: "statDenyReaction", data: {} }),
+  "deny-bonus": () => ({ changes: midiDenyBonusChanges(), descKey: "statDenyBonus", data: {} }),
+  "deny-reaction": () => ({ changes: midiDenyReactionChanges(), descKey: "statDenyReaction", data: {} }),
   // writes to whichever initiative flag is live
   "init-adv": () => dnd5eVersionAtLeast(5, 1)
-    ? { changes: [{ key: "system.attributes.init.roll.mode", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "1", priority: 20 }], descKey: "statInitAdv", data: {} }
-    : { changes: [{ key: "flags.dnd5e.initiativeAdv", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }], descKey: "statInitAdv", data: {} },
+    ? { changes: [{ key: "system.attributes.init.roll.mode", type: "add", value: "1", priority: 20 }], descKey: "statInitAdv", data: {} }
+    : { changes: [{ key: "flags.dnd5e.initiativeAdv", type: "override", value: "1", priority: 20 }], descKey: "statInitAdv", data: {} },
   "resist-all": (targetActor) => {
     const current = Array.from(targetActor.system.traits?.dr?.value ?? []);
     const toAdd = ALL_DAMAGE_TYPES.filter(t => !current.includes(t));
     return {
-      changes: toAdd.map(t => ({ key: "system.traits.dr.value", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: t, priority: 20 })),
+      changes: toAdd.map(t => ({ key: "system.traits.dr.value", type: "add", value: t, priority: 20 })),
       descKey: "statResistAll",
       data: {}
     };
@@ -197,7 +197,7 @@ const PRIMITIVES = {
     const anchor = ctx.attackerToken && token.id !== ctx.attackerToken.id ? ctx.attackerToken : ownerToken(ctx);
     const reference = token.id === anchor?.id ? (ctx.targetToken ?? ctx.attackerToken) : anchor;
     if (!reference || reference.id === token.id) return;
-    const rolled = await rollDie(ctx.die);
+    const rolled = await rollDie(resolveDie(action, ctx));
     const feet = rolled * 5;
     const reachable = findReachableCells(token, feetToSceneDistance(feet));
     const cell = action.dir === "toward"
@@ -217,23 +217,23 @@ const PRIMITIVES = {
     const targetActor = token.actor;
     const rounds = await resolveRounds(action, ctx);
     if (action.stat === "temp-hp") {
-      const total = await rollDie(ctx.die);
+      const total = await rollDie(resolveDie(action, ctx));
       const current = targetActor.system.attributes?.hp?.temp ?? 0;
       if (total > current) await gateDocUpdate(targetActor, { "system.attributes.hp.temp": total }, { name: env.def.name, color: env.def.color, icon: env.item?.img });
       env.lines.push(i18n("tempHp", { name: token.name, total: Math.max(total, current) }));
       return;
     }
     if (action.stat === "speed-penalty") {
-      const total = await rollDie(ctx.die);
+      const total = await rollDie(resolveDie(action, ctx));
       const penalty = feetToActorUnits(targetActor, total * 5);
       const floor = feetToActorUnits(targetActor, 5);
-      const currentSpeed = targetActor.system.attributes?.movement?.walk ?? feetToActorUnits(targetActor, 30);
+      const currentSpeed = movementSpeed(targetActor) ?? feetToActorUnits(targetActor, 30);
       const actual = Math.max(0, Math.min(penalty, currentSpeed - floor));
       await replaceEffect(targetActor, env.def, effectData(
         env.def, env.item,
         env.def.name,
         i18n("statSpeedPenaltyDesc", { penalty: actorUnitsToFeet(targetActor, actual), rune: env.def.name }),
-        [{ key: "system.attributes.movement.walk", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: `-${actual}`, priority: 20 }],
+        [{ key: speedKey(targetActor), type: "add", value: `-${actual}`, priority: 20 }],
         rounds,
         "stat.speed-penalty"
       ));
@@ -257,7 +257,7 @@ const PRIMITIVES = {
   },
 
   async damage(action, token, ctx, env) {
-    let total = await rollDie(ctx.die);
+    let total = await rollDie(resolveDie(action, ctx));
     const dmgMeta = { name: env.def.name, color: env.def.color, icon: env.item?.img };
     if (action.kind === "heal") {
       await gateDamage(token, total, { multiplier: -1 }, dmgMeta);
@@ -289,12 +289,13 @@ const PRIMITIVES = {
   },
 
   async brand(action, token, ctx, env) {
+    const die = resolveDie(action, ctx);
     await replaceEffect(token.actor, env.def, effectData(
       env.def, env.item, env.def.name,
-      i18n("brandDesc", { die: ctx.die, rune: env.def.name }),
-      [], 1, `brand.${env.actionIndex}`, { brandDie: ctx.die }
+      i18n("brandDesc", { die, rune: env.def.name }),
+      [], 1, `brand.${env.actionIndex}`, { brandDie: die }
     ));
-    env.lines.push(i18n("brand", { name: token.name, die: ctx.die }));
+    env.lines.push(i18n("brand", { name: token.name, die }));
   },
 
   async contagion(action, token, ctx, env) {
@@ -304,11 +305,11 @@ const PRIMITIVES = {
       : (action.affects ?? "all");
     await replaceEffect(token.actor, env.def, effectData(
       env.def, env.item, env.def.name,
-      i18n("contagionDesc", { rune: env.def.name, die: ctx.die }),
+      i18n("contagionDesc", { rune: env.def.name, die: resolveDie(action, ctx) }),
       [], rounds,
       `contagion.${env.actionIndex}`,
       {
-        contagionDie: ctx.die,
+        contagionDie: resolveDie(action, ctx),
         contagionDc: action.dc ?? 13,
         contagionAbility: action.ability ?? "con",
         contagionStatus: action.status ?? "poisoned",
@@ -324,7 +325,7 @@ const PRIMITIVES = {
     const target = ctx.targetToken;
     if (!owner || !target || !canvas?.tokens) return false;
     const radius = Number(action.radius) || 30;
-    const feet = (await rollDie(ctx.die)) * 5;
+    const feet = (await rollDie(resolveDie(action, ctx))) * 5;
     const maxSceneDistance = feetToSceneDistance(feet);
     const allies = canvas.tokens.placeables.filter(t =>
       t.actor && t !== owner && areAllies(owner, t) && withinFeet(owner, t, radius)
@@ -385,7 +386,7 @@ const PRIMITIVES = {
     await replaceEffect(attacker.actor, env.def, effectData(
       env.def, env.item, env.def.name,
       i18n("statDisadvAttackDesc", { rune: env.def.name }),
-      [{ key: "flags.midi-qol.disadvantage.attack.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
+      [{ key: "flags.midi-qol.disadvantage.attack.all", type: "override", value: "1", priority: 20 }],
       1,
       `guardianRush.${env.actionIndex}`
     ));
@@ -403,7 +404,7 @@ const PRIMITIVES = {
           clusterEffect: "runeCloud",
           runeId: env.def.id,
           runeName: env.def.name,
-          damageDie: ctx.die,
+          damageDie: resolveDie(action, ctx),
           dc: action.dc ?? env.def.save?.dc ?? 13,
           ability: action.ability ?? env.def.save?.ability ?? "con",
           status: action.status ?? null,

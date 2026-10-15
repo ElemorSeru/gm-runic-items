@@ -2,7 +2,8 @@ import {
   TRIGGER_DEFS, SAVE_WHO, SAVE_ABILITIES, STAT_KEYS, DAMAGE_TYPES, STATUS_KEYS,
   GLYPH_CHOICES, ACTION_TYPES, CLOUD_AFFECTS, CONTAGION_AFFECTS, getCoreDefs,
   validateRuneDef, validateComboDef, formatValidationError,
-  TELEPORT_DISTANCES, teleportDir, teleportFeet
+  TELEPORT_DISTANCES, teleportDir, teleportFeet,
+  actionUsesDie, actionUsesRoundsDie, isValidDieFormula, dieFormulaRange
 } from "./rune-defs.js";
 import {
   canForge, getCustomRunes, getCustomRunesByCategory, getRuneDef, saveCustomRune, deleteCustomRune,
@@ -148,9 +149,43 @@ function whoPhrase(role, category, radius = 15) {
   return rf(`phrase.who.${role}`);
 }
 
+const DIE_UNITS = {
+  move: { key: "squares", mult: 5 },
+  allyDash: { key: "squares", mult: 5 },
+  damage: { key: "damage", mult: 1 },
+  brand: { key: "damage", mult: 1 },
+  contagion: { key: "damage", mult: 1 },
+  cloud: { key: "cloudDamage", mult: 1 }
+};
+
+const DIE_WARN_MAX = { cloud: 20 };
+const DIE_WARN_DEFAULT = 40;
+
+function dieUnitFor(flat) {
+  if (flat.type === "damage" && flat.kind === "heal") return { key: "healing", mult: 1 };
+  if (flat.type === "stat") {
+    if (flat.stat === "temp-hp") return { key: "tempHp", mult: 1 };
+    if (flat.stat === "speed-penalty") return { key: "squares", mult: 5 };
+    return null;
+  }
+  if (DIE_UNITS[flat.type]) return DIE_UNITS[flat.type];
+  return null;
+}
+
+const ROUNDS_UNIT = { key: "rounds", mult: 1 };
+
+// duration pills stop at 10
+const ROUNDS_WARN_MAX = 10;
+
 const DURATION_STATS = new Set(["ac-bonus", "ac-penalty", "speed-penalty", "speed-half", "speed-zero", "disadv-attack", "disadv-check", "resist-all", "deny-bonus", "deny-reaction"]);
 
-function actionPhrase(a, category) {
+function dieSub(text, value, token, index) {
+  const v = typeof value === "string" ? value.trim() : "";
+  return String(text).split("{die}").join(v || `{${token}${index + 1}}`);
+}
+
+function actionPhrase(a, category, index = 0) {
+  const withDie = text => dieSub(text, a.cfg.die, "die", index);
   let base = "";
   if (a.type === "move") {
     const d = dnd5eDisplayDistance(5);
@@ -165,7 +200,7 @@ function actionPhrase(a, category) {
     } else base = rf(`phrase.action.stat.${statKey}`);
   }
   else if (a.type === "damage") {
-    if (a.cfg.kind === "heal") return rf("phrase.action.heal");
+    if (a.cfg.kind === "heal") return withDie(rf("phrase.action.heal"));
     const cfg = CONFIG.DND5E?.damageTypes?.[a.cfg.dtype];
     const type = cfg ? game.i18n.localize(cfg.label ?? cfg) : (a.cfg.dtype ?? "");
     base = rf("phrase.action.damage", { type });
@@ -184,10 +219,11 @@ function actionPhrase(a, category) {
   }
   const r = a.cfg.rounds ?? 1;
   const hasDuration = (a.type === "stat" && DURATION_STATS.has(a.cfg.stat)) || a.type === "contagion";
-  if (r === "die") base += rf("phrase.forRoundsDie");
-  else if (Number(r) > 1) base += rf("phrase.forRounds", { rounds: r });
-  else if (hasDuration) base += rf("phrase.forRound");
-  return base;
+  let tail = "";
+  if (r === "die") tail = dieSub(rf("phrase.forRoundsDie"), a.cfg.roundsDie, "rdie", index);
+  else if (Number(r) > 1) tail = rf("phrase.forRounds", { rounds: r });
+  else if (hasDuration) tail = rf("phrase.forRound");
+  return withDie(base) + tail;
 }
 
 export function buildDescription(st) {
@@ -202,20 +238,20 @@ export function buildDescription(st) {
   const standalone = [];
 
   const groups = [];
-  for (const a of st.actions) {
+  st.actions.forEach((a, i) => {
     if (ACTION_TYPES[a.type]?.point) {
       let pointData;
       if (a.type === "cloud") { const d = dnd5eDisplayDistance(7.5); pointData = { radius: d.value, unit: d.unit }; }
       else if (a.type === "allyDash") { const d = dnd5eDisplayDistance(5); pointData = { pip: d.value, unit: d.unit }; }
-      standalone.push(rf(`phrase.action.${a.type}`, pointData));
-      continue;
+      standalone.push(dieSub(rf(`phrase.action.${a.type}`, pointData), a.cfg.die, "die", i));
+      return;
     }
     const radius = a.cfg.radius ?? 15;
     const key = `${a.target}|${radius}|${st.save.on ? a.onSave : "none"}`;
     let g = groups.find(x => x.key === key);
     if (!g) { g = { key, target: a.target, radius, onSave: a.onSave, phrases: [] }; groups.push(g); }
-    g.phrases.push(actionPhrase(a, st.category));
-  }
+    g.phrases.push(actionPhrase(a, st.category, i));
+  });
 
   const suffix = g => {
     if (!st.save.on) return "";
@@ -633,7 +669,11 @@ export class RuneforgeApp extends AppV2 {
     const sec = document.createElement("fieldset");
     sec.className = "rf-section";
     const legend = document.createElement("legend");
-    legend.textContent = `${step}. ${rf(labelKey)}`;
+    const num = document.createElement("span");
+    num.className = "rf-step-num";
+    num.textContent = String(step);
+    legend.appendChild(num);
+    legend.appendChild(document.createTextNode(rf(labelKey)));
     sec.appendChild(legend);
     return sec;
   }
@@ -1128,6 +1168,7 @@ export class RuneforgeApp extends AppV2 {
     }
 
     cfg.appendChild(this._actionConfig(a));
+    this._dieField(cfg, a);
 
     if (st.save.on) {
       const sLabel = document.createElement("span");
@@ -1142,6 +1183,84 @@ export class RuneforgeApp extends AppV2 {
     }
     row.appendChild(cfg);
     return row;
+  }
+
+  _dieField(parent, a) {
+    const flat = { type: a.type, ...a.cfg };
+    const unit = actionUsesDie(flat) ? dieUnitFor(flat) : null;
+    if (!unit) return;
+    this._overrideField(parent, {
+      label: rf("act.die"),
+      value: a.cfg.die,
+      unit,
+      ceiling: DIE_WARN_MAX[flat.type] ?? DIE_WARN_DEFAULT,
+      onInput: v => { a.cfg.die = v; }
+    });
+  }
+
+  _overrideField(parent, { label, value, unit, ceiling, onInput }) {
+    this._dimLabel(parent, label);
+
+    const row = document.createElement("div");
+    row.className = "rf-die-row";
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "rf-die-input";
+    input.maxLength = 40;
+    input.placeholder = rf("act.diePlaceholder");
+    input.value = typeof value === "string" ? value : "";
+
+    const hint = document.createElement("span");
+    hint.className = "rf-die-hint";
+
+    const warn = document.createElement("i");
+    warn.className = "fa-solid fa-triangle-exclamation rf-die-warn";
+
+    const refresh = () => {
+      const raw = input.value.trim();
+      row.classList.remove("is-invalid", "is-warned");
+      warn.removeAttribute("data-tooltip");
+      if (!raw) {
+        hint.textContent = rf("act.dieDefault");
+        warn.style.display = "none";
+        return;
+      }
+      if (!isValidDieFormula(raw)) {
+        row.classList.add("is-invalid");
+        hint.textContent = rf("act.dieInvalid");
+        warn.style.display = "none";
+        return;
+      }
+      const range = dieFormulaRange(raw);
+      if (!range) { hint.textContent = ""; warn.style.display = "none"; return; }
+      if (unit.mult === 5) {
+        const lo = dnd5eDisplayDistance(range.min * 5);
+        const hi = dnd5eDisplayDistance(range.max * 5);
+        hint.textContent = rf("act.dieRangeDistance", { min: lo.value, max: hi.value, unit: hi.unit });
+      } else {
+        hint.textContent = rf(`act.dieRange.${unit.key}`, { min: range.min, max: range.max });
+      }
+      if (range.max > ceiling) {
+        row.classList.add("is-warned");
+        warn.style.display = "";
+        warn.setAttribute("data-tooltip", rf("act.dieWarn", { max: range.max, ceiling }));
+      } else {
+        warn.style.display = "none";
+      }
+    };
+
+    input.addEventListener("input", () => {
+      onInput(input.value);
+      refresh();
+      this._renderPreview();
+    });
+
+    row.appendChild(input);
+    row.appendChild(warn);
+    row.appendChild(hint);
+    parent.appendChild(row);
+    refresh();
   }
 
   _dimLabel(parent, text) {
@@ -1292,6 +1411,15 @@ export class RuneforgeApp extends AppV2 {
         a.cfg.rounds ?? (a.type === "contagion" ? 10 : 1),
         value => { a.cfg.rounds = value; rerender(); }
       ));
+      if (actionUsesRoundsDie({ type: a.type, ...a.cfg })) {
+        this._overrideField(wrap, {
+          label: rf("act.durationDie"),
+          value: a.cfg.roundsDie,
+          unit: ROUNDS_UNIT,
+          ceiling: ROUNDS_WARN_MAX,
+          onInput: v => { a.cfg.roundsDie = v; }
+        });
+      }
     }
     return wrap;
   }
@@ -1395,8 +1523,17 @@ export class RuneforgeApp extends AppV2 {
 
     const head = document.createElement("div");
     head.className = "rf-pv-head";
-    head.textContent = rf("preview.title");
+    const headLabel = document.createElement("span");
+    headLabel.textContent = rf("preview.title");
+    head.appendChild(headLabel);
+    const dot = document.createElement("span");
+    dot.className = "rf-pv-dot";
+    head.appendChild(dot);
     pv.appendChild(head);
+
+    const body = document.createElement("div");
+    body.className = "rf-pv-body";
+    pv.appendChild(body);
 
     const stage = document.createElement("div");
     stage.className = "rf-pv-stage";
@@ -1417,17 +1554,17 @@ export class RuneforgeApp extends AppV2 {
       + (st.cursed ? ` - ${rf("identity.cursedShort")}` : "");
     nameWrap.appendChild(cat);
     stage.appendChild(nameWrap);
-    pv.appendChild(stage);
+    body.appendChild(stage);
 
     const description = st.actions.length ? buildDescription(st) : "";
     const desc = document.createElement("div");
     desc.className = "rf-pv-desc";
     desc.textContent = description || rf("preview.noActions");
-    pv.appendChild(desc);
+    body.appendChild(desc);
 
     if (!st.locked) {
       const check = this._runeCheck(description);
-      if (!check.ok) pv.appendChild(this._issuesPanel("issues.head", check.messages));
+      if (!check.ok) body.appendChild(this._issuesPanel("issues.head", check.messages));
 
       const btns = document.createElement("div");
       btns.className = "rf-pv-btns";
@@ -1454,7 +1591,7 @@ export class RuneforgeApp extends AppV2 {
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       });
       btns.appendChild(exp);
-      pv.appendChild(btns);
+      body.appendChild(btns);
     }
   }
 

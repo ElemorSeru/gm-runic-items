@@ -1,6 +1,7 @@
 import { measureDist } from "./movement.js";
 import { RUNE_REGISTRY } from "./rune-registry.js";
 import { getCustomRunesByCategory } from "./rune-store.js";
+import { movementSpeed } from "./compat.js";
 
 const ARMOR_AMBIGUOUS_SUBTYPES = ["clothing", "rod", "trinket", "wondrous"];
 
@@ -224,7 +225,7 @@ export function actorUnitsToFeet(actor, value) {
 }
 export function actorSpeedInSceneUnits(actor, key = "walk") {
   const units = actorLengthUnits(actor);
-  const raw = actor?.system?.attributes?.movement?.[key] ?? dnd5eConvertLength(30, "ft", units);
+  const raw = movementSpeed(actor, key) ?? dnd5eConvertLength(30, "ft", units);
   return dnd5eConvertLength(raw, units, sceneGridInfo().units);
 }
 export function dnd5eDisplayDistance(feet) {

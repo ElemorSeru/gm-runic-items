@@ -1,8 +1,9 @@
 import {
   getItemCategory, getRunePool,
-  computeRunicRarity, getRarityDie, meetsRequirements, withCache,
+  computeRunicRarity, getRarityDie, meetsRequirements,
   renderTemplateCompat
 } from "./utils.js";
+import { applyDieTokens } from "./rune-defs.js";
 import {
   RUNE_REGISTRY,
   ABILITY_OPTIONS,
@@ -16,7 +17,9 @@ import {
   getLegacyFeats, getLegacySpells,
   ensureLegacyCacheLoaded, isLegacyCacheLoaded
 } from "./legacy-cache.js";
+import { sortBySource, buildSourceHead } from "./legacy-sources.js";
 import { evaluateItem, clearItemEffects } from "./effect-manager.js";
+import { effectChanges } from "./compat.js";
 
 const MODULE_ID = "gm-runic-items";
 export const TEMPLATE = `modules/${MODULE_ID}/templates/rune-panel.hbs`;
@@ -104,10 +107,10 @@ function truncateWords(html, maxWords = 38) {
   return words.slice(0, maxWords).join(" ") + "...";
 }
 
-function formatDesc(description, item) {
+function formatDesc(description, item, rune) {
   if (!description) return "";
   const die = getRarityDie(computeRunicRarity(item));
-  return description.replace(/\{die\}/g, die);
+  return applyDieTokens(description, rune?.actions, die);
 }
 
 const _allRunes = Object.values(RUNE_REGISTRY).flat();
@@ -865,7 +868,7 @@ export function initAllSockets(panelEl, flags, runePool, item) {
       fillSocket(
         slotEl, rune.glyph, rune.color,
         masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedName`) : rune.name,
-        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedDesc`) : formatDesc(rune.description, item),
+        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedDesc`) : formatDesc(rune.description, item, rune),
         false, item, null, { fill: rune.glyphMode === "silhouette", view: rune.glyphView }
       );
     } else if (slotEl.dataset.runeId) {
@@ -1027,7 +1030,7 @@ async function applySelection(panelEl, item, section, value, runePool, flags) {
     clearSocket(slotEl);
   } else if (section === "power") {
     const rune = runePool.find(r => r.id === value);
-    if (rune) fillSocket(slotEl, rune.glyph, rune.color, rune.name, formatDesc(rune.description, item), true, item, null, { fill: rune.glyphMode === "silhouette", view: rune.glyphView });
+    if (rune) fillSocket(slotEl, rune.glyph, rune.color, rune.name, formatDesc(rune.description, item, rune), true, item, null, { fill: rune.glyphMode === "silhouette", view: rune.glyphView });
   } else if (section === "empowerment") {
     const opt = ABILITY_OPTIONS.find(o => o.key === value);
     if (opt) {
@@ -1096,7 +1099,7 @@ function buildPickerContent(pickerEl, section, runePool, flags, activeSlotEl, it
         rune.id,
         masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedName`) : rune.name,
         rune.glyph, rune.color, "opt-sock-power", rune.id === currentId,
-        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedDesc`) : (item ? formatDesc(rune.description, item) : rune.description),
+        masked ? game.i18n.localize(`${MODULE_ID}.runeforge.cursedDesc`) : (item ? formatDesc(rune.description, item, rune) : rune.description),
         { fill: rune.glyphMode === "silhouette", view: rune.glyphView }
       ));
     }
@@ -1116,7 +1119,7 @@ function buildPickerContent(pickerEl, section, runePool, flags, activeSlotEl, it
       e.origin === item.uuid
     );
     const appliedBonuses = {};
-    for (const change of (empEffect?.changes ?? [])) {
+    for (const change of effectChanges(empEffect)) {
       const m = change.key.match(/system\.abilities\.(\w+)\.value/);
       if (m) appliedBonuses[m[1]] = parseInt(change.value) || 0;
     }
@@ -1234,7 +1237,12 @@ function buildLegacySearchPicker(pickerEl, isFeats, currentValue, item) {
       }
     }
 
-    for (const entry of filtered) {
+    let lastPack = null;
+    for (const entry of sortBySource(filtered)) {
+      if (entry.pack !== lastPack) {
+        grid.insertBefore(buildSourceHead(entry.pack), removeOpt);
+        lastPack = entry.pack;
+      }
       const isSelected = entry.uuid === currentValue;
       const el = document.createElement("div");
       el.className = "rune-option" + (isSelected ? " opt-selected" : "");
@@ -1601,7 +1609,8 @@ async function onUpdateItem(item, changes) {
     k.startsWith("system.damage") || k === `flags.${MODULE_ID}.injectedDamageTypes`
   )) return;
 
-  return withCache("updateItem", item.id, 150, () => evaluateItem(item));
+  // a throttle here drops the last equip change
+  return evaluateItem(item);
 }
 
 async function onDeleteItem(item) {
@@ -1612,9 +1621,6 @@ async function onDeleteItem(item) {
 export async function onRenderActorSheet(sheet, html, data) {
   const actor = sheet.actor;
   if (!actor) return;
-  return withCache("actorSheet", actor.id, 500, async () => {
-    const targets = actor.items.filter(i => i.flags?.[MODULE_ID] && getItemCategory(i));
-    // sequential to manage combatting parallel checks
-    for (const i of targets) await evaluateItem(i);
-  });
+  const targets = actor.items.filter(i => i.flags?.[MODULE_ID] && getItemCategory(i));
+  await Promise.all(targets.map(i => evaluateItem(i)));
 }

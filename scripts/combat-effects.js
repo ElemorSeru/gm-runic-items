@@ -8,8 +8,9 @@ import {
 import { computeRayDestination, findReachableCells, findBestCellTowardTarget, findBestAdjacentCell, measureDist, angleBetween } from "./movement.js";
 import { areAllies, areEnemies, tokenSide } from "./rune-engine.js";
 import { gateMove, gateDamage, gateStatus, gateEffect, gateTemplate, handleManualActionSocket, isManualMode, damageTypeLabel } from "./manual-actions.js";
+import { midiDenyBonusChanges, midiDenyReactionChanges, midiDisadvCheckChanges, speedKey, movementSpeed } from "./compat.js";
 import { narrateUntargeted } from "./rune-narrate.js";
-import { promptRiderTarget, CANCELLED } from "./target-picker.js";
+import { promptRiderTarget, CANCELED } from "./target-picker.js";
 
 async function gatedEffect(actor, data, item) {
   await gateEffect(actor, data, { name: item?.name ?? "", icon: item?.img });
@@ -101,8 +102,8 @@ async function handleAttackRoll(item, roll) {
     targetTokenIds: hitTargets.map(t => t.id),
     missTokenIds: missTargets.map(t => t.id),
     isCritical: roll.isCritical === true,
-    riderTokenId: chosen === CANCELLED ? null : (chosen?.id ?? null),
-    ridersDeclined: chosen === CANCELLED
+    riderTokenId: chosen === CANCELED ? null : (chosen?.id ?? null),
+    ridersDeclined: chosen === CANCELED
   };
   if (game.users?.activeGM === game.user) await executeAttackHit(payload);
   else game.socket.emit(`module.${MODULE_ID}`, payload);
@@ -112,12 +113,12 @@ async function pickRiderTarget(item, hitTargets) {
   if (hitTargets.length < 2 || !itemHasAttackRunes(item)) return null;
   const originToken = item.actor?.getActiveTokens?.()[0] ?? null;
   const chosen = await promptRiderTarget(item, hitTargets, originToken);
-  if (chosen === CANCELLED) {
+  if (chosen === CANCELED) {
     ChatMessage.create({
       speaker: { actor: item.actor },
       content: game.i18n.format(`${MODULE_ID}.picker.declined`, { item: item.name })
     });
-    return CANCELLED;
+    return CANCELED;
   }
   return chosen;
 }
@@ -389,7 +390,7 @@ async function scriptedEmberveil(ctx) {
       origin: armor.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
       // mark the bonus action as spent
-      changes: [{ key: "flags.midi-qol.actions.bonus", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
+      changes: midiDenyBonusChanges(),
       description: game.i18n.localize(`${MODULE_ID}.effects.wardpulseBlock`),
       flags: { [MODULE_ID]: { sourceItem: armor.id, effectKey: "wardpulseBlock" } }
     }, armor);
@@ -419,7 +420,7 @@ async function scriptedForgeshield(ctx) {
       img: "icons/magic/defensive/shield-barrier-glowing-blue.webp",
       origin: armor.uuid,
       duration: { rounds: 2, startRound: game.combat?.round ?? 0 },
-      changes: [{ key: "system.attributes.ac.bonus", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "2", priority: 20 }],
+      changes: [{ key: "system.attributes.ac.bonus", type: "add", value: "2", priority: 20 }],
       description: game.i18n.localize(`${MODULE_ID}.effects.forgeshield`),
       flags: { [MODULE_ID]: { sourceItem: armor.id, effectKey: "forgeshieldAura" } }
     }, armor);
@@ -448,7 +449,7 @@ async function scriptedWardpulse(ctx) {
       origin: armor.uuid,
       duration: { rounds: 1, startRound: currentRound },
       // mark the bonus action as spent
-      changes: [{ key: "flags.midi-qol.actions.bonus", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
+      changes: midiDenyBonusChanges(),
       description: game.i18n.localize(`${MODULE_ID}.effects.wardpulseBlock`),
       flags: { [MODULE_ID]: { sourceItem: armor.id, effectKey: "wardpulseBlock" } }
     }, armor);
@@ -535,7 +536,7 @@ export async function processGuardiansRush(attacker, item, targets) {
       origin: actor.uuid,
       duration: { rounds: 1, startRound: game.combat.round },
       // core dnd5e can't automate attack disadvantage so if midi-qol is active, midi-qol honors this flag
-      changes: [{ key: "flags.midi-qol.disadvantage.attack.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
+      changes: [{ key: "flags.midi-qol.disadvantage.attack.all", type: "override", value: "1", priority: 20 }],
       description: game.i18n.localize(`${MODULE_ID}.effects.vanguardDisadvantage`),
       flags: { [MODULE_ID]: { effectKey: "vanguardDisadvantage", sourceItem: armor.id } }
     }, armor);
@@ -642,7 +643,7 @@ async function scriptedStonecleft(ctx) {
       img: "icons/magic/movement/chevrons-down-yellow.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
-      changes: [{ key: "system.attributes.movement.walk", mode: CONST.ACTIVE_EFFECT_MODES.MULTIPLY, value: "0.5", priority: 20 }],
+      changes: [{ key: speedKey(targetActor), type: "multiply", value: "0.5", priority: 20 }],
       description: game.i18n.localize(`${MODULE_ID}.effects.stonecleft`),
       flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "stonecleft" } }
     }, item);
@@ -678,7 +679,7 @@ async function scriptedMirageward(ctx) {
     origin: item.uuid,
     duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
     // mark the reaction as spent
-    changes: [{ key: "flags.midi-qol.actions.reaction", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
+    changes: midiDenyReactionChanges(),
     description: game.i18n.format(`${MODULE_ID}.effects.mirageward`, { attacker: actor.name }),
     flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "mirageward" } }
   }, item);
@@ -718,7 +719,7 @@ async function scriptedRuinmark(ctx) {
     img: "icons/magic/symbols/rune-sigil-red-orange.webp",
     origin: item.uuid,
     duration: { rounds, startRound: game.combat?.round ?? 0 },
-    changes: [{ key: "system.attributes.ac.bonus", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "-2", priority: 20 }],
+    changes: [{ key: "system.attributes.ac.bonus", type: "add", value: "-2", priority: 20 }],
     description: game.i18n.format(`${MODULE_ID}.effects.ruinmark`, { rounds }),
     flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "ruinmark" } }
   }, item);
@@ -858,7 +859,7 @@ async function applySandgrasp(item, actor, targetActor, die, autoFail) {
     const roll = await new Roll(die).evaluate();
     const penalty = feetToActorUnits(targetActor, roll.total * 5);
     const floor = feetToActorUnits(targetActor, 5);
-    const currentSpeed = targetActor.system.attributes.movement.walk ?? feetToActorUnits(targetActor, 30);
+    const currentSpeed = movementSpeed(targetActor) ?? feetToActorUnits(targetActor, 30);
     const actualPenalty = Math.min(penalty, currentSpeed - floor);
     const penaltyShown = dnd5eDisplayDistance(actorUnitsToFeet(targetActor, actualPenalty));
 
@@ -870,7 +871,7 @@ async function applySandgrasp(item, actor, targetActor, die, autoFail) {
       img: "icons/magic/earth/strike-fist-stone.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
-      changes: [{ key: "system.attributes.movement.walk", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: `-${actualPenalty}`, priority: 20 }],
+      changes: [{ key: speedKey(targetActor), type: "add", value: `-${actualPenalty}`, priority: 20 }],
       description: game.i18n.format(`${MODULE_ID}.effects.sandgrasp`, { penalty: penaltyShown.value, unit: penaltyShown.unit }),
       flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "sandgrasp" } }
     }, item);
@@ -903,7 +904,7 @@ async function applyMiragewardToAllies(item, actor) {
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
       // mark the reaction as spent
-      changes: [{ key: "flags.midi-qol.actions.reaction", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
+      changes: midiDenyReactionChanges(),
       description: game.i18n.format(`${MODULE_ID}.effects.mirageward`, { attacker: actor.name }),
       flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "mirageward" } }
     }, item);
@@ -921,7 +922,7 @@ async function scriptedBurntrace(ctx) {
     origin: item.uuid,
     duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
     // Enforce through midi-qol if active
-    changes: [{ key: "flags.midi-qol.disadvantage.attack.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 }],
+    changes: [{ key: "flags.midi-qol.disadvantage.attack.all", type: "override", value: "1", priority: 20 }],
     description: game.i18n.localize(`${MODULE_ID}.effects.burntrace`),
     flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "burntrace" } }
   }, item);
@@ -938,7 +939,7 @@ async function scriptedSandhold(ctx) {
   const roll = await new Roll(die).evaluate();
   const penalty = feetToActorUnits(targetActor, roll.total * 5);
   const floor = feetToActorUnits(targetActor, 5);
-  const currentSpeed = targetActor.system.attributes.movement.walk ?? feetToActorUnits(targetActor, 30);
+  const currentSpeed = movementSpeed(targetActor) ?? feetToActorUnits(targetActor, 30);
   const actualPenalty = Math.min(penalty, currentSpeed - floor);
   const penaltyShown = dnd5eDisplayDistance(actorUnitsToFeet(targetActor, actualPenalty));
 
@@ -950,7 +951,7 @@ async function scriptedSandhold(ctx) {
     img: "icons/magic/control/hypnosis-mesmerism-watch.webp",
     origin: item.uuid,
     duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
-    changes: [{ key: "system.attributes.movement.walk", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: `-${actualPenalty}`, priority: 20 }],
+    changes: [{ key: speedKey(targetActor), type: "add", value: `-${actualPenalty}`, priority: 20 }],
     description: game.i18n.format(`${MODULE_ID}.effects.sandhold`, { penalty: penaltyShown.value, unit: penaltyShown.unit }),
     flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "sandhold" } }
   }, item);
@@ -983,7 +984,7 @@ async function scriptedUndertow(ctx) {
   });
 
   if (combo?.id === "crystal-anchor") {
-    const currentSpeed = targetActor.system.attributes.movement.walk ?? 30;
+    const currentSpeed = movementSpeed(targetActor) ?? 30;
     const existing = targetActor.effects.find(e => e.flags?.[MODULE_ID]?.effectKey === "sandhold");
     if (existing) await targetActor.deleteEmbeddedDocuments("ActiveEffect", [existing.id]);
 
@@ -992,7 +993,7 @@ async function scriptedUndertow(ctx) {
       img: "icons/magic/control/hypnosis-mesmerism-watch.webp",
       origin: item.uuid,
       duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
-      changes: [{ key: "system.attributes.movement.walk", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "0", priority: 30 }],
+      changes: [{ key: speedKey(targetActor), type: "override", value: "0", priority: 30 }],
       description: game.i18n.localize(`${MODULE_ID}.effects.sandholdAnchored`),
       flags: { [MODULE_ID]: { sourceItem: item.id, effectKey: "sandhold" } }
     }, item);
@@ -1013,11 +1014,11 @@ async function scriptedUndertow(ctx) {
           duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
           changes: [
             // for midi-qol flag
-            { key: "flags.midi-qol.disadvantage.attack.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 },
-            { key: "flags.midi-qol.disadvantage.ability.check.all", mode: CONST.ACTIVE_EFFECT_MODES.OVERRIDE, value: "1", priority: 20 },
+            { key: "flags.midi-qol.disadvantage.attack.all", type: "override", value: "1", priority: 20 },
+            ...midiDisadvCheckChanges(),
             // handle per-ability in core
             ...["str", "dex", "con", "int", "wis", "cha"].map(a => ({
-              key: `system.abilities.${a}.check.roll.mode`, mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: "-1", priority: 20
+              key: `system.abilities.${a}.check.roll.mode`, type: "add", value: "-1", priority: 20
             }))
           ],
           description: game.i18n.localize(`${MODULE_ID}.effects.burntraceAnchored`),
@@ -1235,7 +1236,7 @@ async function scriptedAshenmantle(ctx) {
     img: "icons/magic/symbols/elements-air-earth-fire-water.webp",
     origin: armor.uuid,
     duration: { rounds: 1, startRound: game.combat?.round ?? 0 },
-    changes: toAdd.map(t => ({ key: "system.traits.dr.value", mode: CONST.ACTIVE_EFFECT_MODES.ADD, value: t, priority: 20 })),
+    changes: toAdd.map(t => ({ key: "system.traits.dr.value", type: "add", value: t, priority: 20 })),
     description: game.i18n.localize(`${MODULE_ID}.effects.ashenmantleResistance`),
     flags: { [MODULE_ID]: { effectKey: "ashenmantleResistance", sourceItem: armor.id } }
   }, armor);

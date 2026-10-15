@@ -3,7 +3,7 @@ import { dnd5eDisplayDistance, sceneDistanceToFeet } from "./utils.js";
 
 const MODULE_ID = "gm-runic-items";
 
-export const CANCELLED = Symbol("runic-picker-cancelled");
+export const CANCELED = Symbol("runic-picker-canceled");
 
 function i18n(key, data) {
   return data
@@ -98,7 +98,7 @@ export async function promptRiderTarget(item, hitTargets, originToken) {
       const rows = root?.querySelectorAll?.(".runic-pick-row") ?? [];
       // without rows there is nothing to click so never leave the attack waiting
       if (!rows.length) {
-        finish(CANCELLED);
+        finish(CANCELED);
         dialog.close();
         return;
       }
@@ -114,7 +114,7 @@ export async function promptRiderTarget(item, hitTargets, originToken) {
     });
 
     // covers the cancel button, the window X, and Esc
-    dialog.addEventListener("close", () => finish(CANCELLED), { once: true });
+    dialog.addEventListener("close", () => finish(CANCELED), { once: true });
 
     dialog.render(true);
   });

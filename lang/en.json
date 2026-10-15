@@ -264,13 +264,13 @@
       "statSpeedZero": "{name} has their speed reduced to 0.",
       "statSpeedZeroDesc": "Movement speed reduced to 0 due to {rune}.",
       "statDisadvAttack": "{name} suffers disadvantage on attack rolls.",
-      "statDisadvAttackDesc": "Disadvantage on attack rolls due to {rune}. Enforced automatically with midi-qol; otherwise a reminder.",
+      "statDisadvAttackDesc": "Disadvantage on attack rolls due to {rune}.",
       "statInitAdv": "{name} rolls initiative with advantage.",
       "statInitAdvDesc": "Advantage on initiative due to {rune}.",
       "statResistAll": "{name} gains resistance to all damage.",
       "statResistAllDesc": "Resistance to all damage types due to {rune}.",
       "statDisadvCheck": "{name} suffers disadvantage on ability checks.",
-      "statDisadvCheckDesc": "Disadvantage on ability checks due to {rune}. Automated in core dnd5e 4.1+; midi-qol flag included.",
+      "statDisadvCheckDesc": "Disadvantage on ability checks due to {rune}.",
       "lastsRound": "Lasts 1 round.",
       "lastsRounds": "Lasts {rounds} rounds.",
       "brand": "{name} is branded: hits against them deal an extra {die} damage.",
@@ -291,8 +291,8 @@
       "misconfigured": "{name} is misconfigured and was skipped. Open the Runeforge to fix it.",
       "statDenyBonus": "{name} loses their bonus action.",
       "statDenyReaction": "{name} loses their reaction.",
-      "statDenyBonusDesc": "Bonus action denied by {rune}. Enforced automatically with midi-qol.",
-      "statDenyReactionDesc": "Reaction denied by {rune}. Enforced automatically with midi-qol.",
+      "statDenyBonusDesc": "Bonus action denied by {rune}.",
+      "statDenyReactionDesc": "Reaction denied by {rune}.",
       "teleportToward": "{name} blinks {distance} {unit} closer.",
       "teleportAway": "{name} blinks {distance} {unit} away.",
       "teleportBlocked": "{name} cannot blink. No visible space in that direction."
@@ -461,7 +461,21 @@
         "effect": "Effect",
         "mode": "Mode",
         "damageType": "Damage type",
-        "condition": "Condition"
+        "condition": "Condition",
+        "dieRange": {
+          "damage": "{min} - {max} damage",
+          "healing": "{min} - {max} HP healed",
+          "tempHp": "{min} - {max} temporary HP",
+          "cloudDamage": "{min} - {max} damage each round",
+          "rounds": "{min} - {max} rounds"
+        },
+        "die": "Dice Override",
+        "diePlaceholder": "Die value",
+        "dieDefault": "Uses the item's rarity die",
+        "dieInvalid": "Not a valid dice formula",
+        "dieWarn": "Rolls up to {max}, well above the usual {ceiling}. Double check this is what you want.",
+        "dieRangeDistance": "{min} - {max} {unit}",
+        "durationDie": "Duration Override"
       },
       "action": {
         "move": {

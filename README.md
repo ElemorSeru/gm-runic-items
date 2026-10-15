@@ -2,7 +2,7 @@
 
 [![Patreon](https://img.shields.io/badge/Patreon-F96854?style=for-the-badge&logo=patreon&logoColor=white)](https://patreon.com/Elemor)
 [![Foundry Version](https://img.shields.io/badge/Foundry-v12--v14-informational?style=for-the-badge)](https://foundryvtt.com)
-[![Module Version](https://img.shields.io/badge/Version-1.3.1-success?style=for-the-badge)](https://github.com/ElemorSeru/gm-runic-items/releases/latest)
+[![Module Version](https://img.shields.io/badge/Version-1.4.0-success?style=for-the-badge)](https://github.com/ElemorSeru/gm-runic-items/releases/latest)
 <img alt="GitHub Downloads (all assets, latest release)" src="https://img.shields.io/github/downloads/ElemorSeru/gm-runic-items/latest/total">
 
 A Foundry VTT module for D&D 5e that lets GMs inscribe named runes onto weapons and armor, granting combat effects, stat boosts, feats, and spells. Designed for fast, thematic item upgrades without the overhead of crafting systems.
@@ -17,7 +17,7 @@ Each weapon or armor item sheet gains a **Solvarian Runecraft** panel in the Det
 - **Runic Empowerment** - up to 5 ability score boosts, each adding +1 to the chosen stat
 - **Runic Legacy** - one feat and one spell granted directly from any loaded compendium
 
-Runes activate when the item is equipped (and attuned if required). Effects fire through Foundry's hook system, so no macro setup or manual triggering is required. A few effects that impose attack-roll disadvantage rely on midi-qol to enforce automatically. See Compatibility Notes.
+Runes activate when the item is equipped (and attuned if required). Effects fire through Foundry's hooks, so no macros or manual triggering needed. A few effects that give attack-roll disadvantage or spend a reaction need midi-qol to be enforced automatically. See Compatibility Notes.
 
 GMs and Assistant GMs can also build their own power runes and combos in the **Runeforge** window. Custom runes appear in the same pickers and run on the same automation engine as the built-in ones. See the Runeforge section below.
 
@@ -77,7 +77,7 @@ Ember Surge, Rift Break, Crystal Anchor, Blight Field, Ironwall, Morrain's Resol
 | Requirement | Version |
 |-------------|---------|
 | Foundry VTT | 12+ |
-| D&D 5e System | 4.1.0 - 5.x |
+| D&D 5e System | 4.1.0 - 6.x |
 
 ---
 
@@ -145,10 +145,10 @@ Everything is stored in the world and can be exported to JSON and imported into 
 
 - Vanguard's Guardian's Rush moves tokens and requires an active combat encounter.
 - Legacy grants add items directly to the actor's item list tagged with the source item's name.
-- Attack-roll disadvantage (Burntrace, Vanguard's Guardian's Rush, and the Crystal Anchor combo) is applied through a midi-qol flag. Without midi-qol installed, those effects still appear on the target as a reminder but do not enforce the disadvantage automatically. The ability-check disadvantage from Crystal Anchor is automated in core dnd5e 4.1+.
-- Mirageward's opportunity-attack denial and Wardpulse/Ironwall's bonus-action denial also write a midi-qol action-economy flag (marking the reaction or bonus action as already spent). Without midi-qol, both still appear on the target as a reminder but rely on the table to self-enforce.
+- Attack-roll disadvantage (Burntrace, Vanguard's Guardian's Rush, and the Crystal Anchor combo) uses a midi-qol flag. Without midi-qol those effects still show on the target as a reminder but the disadvantage isn't enforced. Crystal Anchor's ability-check disadvantage is handled by core dnd5e 4.3+ and doesn't need midi-qol. On 4.1 - 4.2 it's a reminder.
+- Mirageward's opportunity-attack denial and Wardpulse/Ironwall's bonus-action denial write midi-qol's action-economy flag (marking the reaction or bonus action as spent) and need midi-qol's action-economy enforcement turned on. Without midi-qol both still show on the target as a reminder for the table to apply.
 - Ashcloud (and the cloud spawned by the Blight Field combo) only rolls saves and applies poison damage for hostile NPC tokens. Allied and player tokens standing in the cloud are not affected by the automation.
-- Custom rune attack-roll disadvantage uses the same midi-qol flag as the built-in runes. The check-disadvantage option is automated in core dnd5e 4.1+ and also writes the midi-qol flag.
+- Custom rune attack-roll disadvantage uses the same midi-qol flag as the built-in runes. The check disadvantage option is handled by core dnd5e 4.3+ and also writes the midi-qol flag.
 - Rune and combo damage is applied as a typed damage instance, so target resistance, vulnerability, and immunity apply the same as any other damage source.
 - The On Kill trigger attributes a kill to the last runic weapon that hit the target within the previous 60 seconds.
 - The Enemy Approach trigger fires once when an enemy enters 10 ft of the wearer and re-arms after they leave that radius.
